@@ -1,0 +1,858 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------------------
+// NÚCLEO DE AUTENTICAÇÃO, AUDITORIA E SEGURANÇA
+// ----------------------------------------------------
+
+enum Role {
+  ADMIN
+  FINANCIAL
+  OPERATOR
+  VIEWER
+}
+
+model User {
+  id           String     @id @default(uuid())
+  name         String
+  email        String     @unique
+  passwordHash String     // Hash gerado com Argon2id
+  role         Role       @default(OPERATOR)
+  isActive     Boolean    @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  sessions     Session[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("sessions")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action      String   // CREATE, UPDATE, VOID, DELETE, STATUS_CHANGE
+  entity      String   // Ex: AccountPayable, Contract, CommissionRecord, DebtObligation
+  entityId    String
+  oldValues   Json?    // Snapshot anterior
+  newValues   Json?    // Snapshot posterior
+  ipAddress   String?
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// ----------------------------------------------------
+// ESTRUTURA ORGANIZACIONAL: EMPRESAS & CENTROS DE CUSTO
+// ----------------------------------------------------
+
+model Company {
+  id             String   @id @default(uuid())
+  code           String   @unique // CASSARATECH, DA_VELAS, DA_RESINAS, MIDIA_SOCIAL, CASA
+  name           String   // Razão social ou nome completo
+  tradeName      String   // Nome fantasia
+  documentNumber String?  // CPF ou CNPJ
+  email          String?
+  phone          String?
+  address        String?
+  legalRepresentative String?
+  isPersonal     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  costCenters    CostCenter[]
+  bankAccounts   BankAccount[]
+  contracts      Contract[]
+  debts          DebtObligation[]
+
+  @@map("companies")
+}
+
+model CostCenter {
+  id          String   @id @default(uuid())
+  code        String   @unique // SISTEMAS, VELAS, RESINAS, MIDIA_SOCIAL, CASA
+  name        String
+  description String?
+  companyId   String?
+  company     Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  accountsPayable    AccountPayable[]
+  accountsReceivable AccountReceivable[]
+  mediaExpenses      MediaExpense[]
+  costAllocations    CostAllocation[]
+  commissionRules    CommissionRule[]
+  partners           Partner[]
+  debts              DebtObligation[]
+  goals              PerformanceGoal[]
+
+  @@map("cost_centers")
+}
+
+// ----------------------------------------------------
+// PLANO DE CONTAS HIERÁRQUICO (ATÉ 4 NÍVEIS)
+// ----------------------------------------------------
+
+enum AccountType {
+  RECEITA_OPERACIONAL
+  CUSTO_DIRETO
+  CUSTO_INDIRETO
+  DESPESA_ADMINISTRATIVA
+  DESPESA_COMERCIAL_MARKETING
+  INVESTIMENTO_ATIVO
+  OBRIGACAO_FINANCEIRA
+  APORTE_CAPITAL
+  TRANSFERENCIA_INTERNA
+  APLICACAO_RESGATE
+}
+
+model ChartOfAccount {
+  id          String      @id @default(uuid())
+  code        String      @unique // Ex: "1", "1.1", "1.1.1", "1.1.1.001"
+  name        String
+  level       Int
+  type        AccountType
+  parentId    String?
+  parent      ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
+  children    ChartOfAccount[] @relation("AccountHierarchy")
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  accountsPayable    AccountPayable[]
+  accountsReceivable AccountReceivable[]
+
+  @@map("chart_of_accounts")
+}
+
+// ----------------------------------------------------
+// BANCOS, CARTÕES E TESOURARIA
+// ----------------------------------------------------
+
+enum BankAccountType {
+  CORRENTE
+  POUPANCA
+  PAGAMENTO
+  INVESTIMENTO
+  CAIXA_FISICO
+}
+
+model BankAccount {
+  id            String          @id @default(uuid())
+  companyId     String?
+  company       Company?        @relation(fields: [companyId], references: [id])
+  bankName      String
+  accountType   BankAccountType @default(CORRENTE)
+  holderName    String
+  accountNumber String?
+  initialBalance Decimal        @default(0)
+  currentBalance Decimal        @default(0)
+  referenceDate DateTime        @default(now())
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  creditCards          CreditCard[]
+  accountsPayablePaid  AccountPayable[]    @relation("BankPayable")
+  accountsReceivableIn AccountReceivable[] @relation("BankReceivable")
+  transactions         BankTransaction[]
+  debts                DebtObligation[]
+
+  @@map("bank_accounts")
+}
+
+model CreditCard {
+  id             String   @id @default(uuid())
+  bankAccountId  String?
+  bankAccount    BankAccount? @relation(fields: [bankAccountId], references: [id])
+  holderName     String
+  cardBrand      String
+  nickname       String
+  creditLimit    Decimal  @default(0)
+  closingDay     Int
+  dueDay         Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  invoices       CreditCardInvoice[]
+
+  @@map("credit_cards")
+}
+
+model CreditCardInvoice {
+  id           String   @id @default(uuid())
+  creditCardId String
+  creditCard   CreditCard @relation(fields: [creditCardId], references: [id], onDelete: Cascade)
+  referenceMonth Int
+  referenceYear  Int
+  closingDate  DateTime
+  dueDate      DateTime
+  totalAmount  Decimal  @default(0)
+  isPaid       Boolean  @default(false)
+  paidAt       DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  items        AccountPayable[]
+
+  @@map("credit_card_invoices")
+}
+
+model BankTransaction {
+  id             String      @id @default(uuid())
+  bankAccountId  String
+  bankAccount    BankAccount @relation(fields: [bankAccountId], references: [id])
+  date           DateTime
+  description    String
+  amount         Decimal
+  isReconciled   Boolean     @default(false)
+  reconciledWith String?
+  fitid          String?
+  createdAt      DateTime    @default(now())
+
+  @@unique([bankAccountId, fitid])
+  @@map("bank_transactions")
+}
+
+// ----------------------------------------------------
+// CLIENTES, FORNECEDORES E PARCEIROS
+// ----------------------------------------------------
+
+enum LeadStatus {
+  NOVO_CONTATO
+  EM_ATENDIMENTO
+  LEVANTAMENTO
+  PROPOSTA_ELABORACAO
+  PROPOSTA_ENVIADA
+  NEGOCIACAO
+  APROVADA
+  PERDIDA
+  CONVERTIDA
+}
+
+model Customer {
+  id             String      @id @default(uuid())
+  name           String
+  documentNumber String?
+  email          String?
+  phone          String?
+  address        String?
+  city           String?
+  state          String?
+  interestedIn   String?
+  status         LeadStatus  @default(NOVO_CONTATO)
+  partnerId      String?
+  partner        Partner?    @relation(fields: [partnerId], references: [id], onDelete: SetNull)
+  notes          String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  accountsReceivable AccountReceivable[]
+  contracts          Contract[]
+  orders             Order[]
+
+  @@map("customers")
+}
+
+model Supplier {
+  id             String   @id @default(uuid())
+  name           String
+  documentNumber String?
+  email          String?
+  phone          String?
+  address        String?
+  category       String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  accountsPayable AccountPayable[]
+  debts           DebtObligation[]
+
+  @@map("suppliers")
+}
+
+enum PartnerType {
+  AFILIADO
+  INDICADOR
+  PARCEIRO_ESTRATEGICO
+  FORNECEDOR_CONJUNTO
+  AUTONOMO
+}
+
+model Partner {
+  id             String      @id @default(uuid())
+  name           String
+  documentNumber String?
+  email          String?
+  phone          String?
+  type           PartnerType @default(INDICADOR)
+  costCenterId   String?
+  costCenter     CostCenter? @relation(fields: [costCenterId], references: [id])
+  startDate      DateTime    @default(now())
+  endDate        DateTime?
+  commissionRate Decimal     @default(0) // % de comissão acordada
+  conditions     String?     // Condições comerciais
+  internalOwner  String?     // Responsável interno
+  isActive       Boolean     @default(true)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  customers      Customer[]
+  commissions    CommissionRecord[]
+
+  @@map("partners")
+}
+
+// ----------------------------------------------------
+// CONTAS A PAGAR E A RECEBER
+// ----------------------------------------------------
+
+enum PaymentStatus {
+  RASCUNHO
+  EM_ABERTO
+  A_VENCER
+  VENCIDA
+  PARCIALMENTE_PAGA
+  PAGA
+  RENEGOCIADA
+  CANCELADA
+}
+
+model AccountPayable {
+  id               String          @id @default(uuid())
+  description      String
+  supplierId       String?
+  supplier         Supplier?       @relation(fields: [supplierId], references: [id])
+  costCenterId     String
+  costCenter       CostCenter      @relation(fields: [costCenterId], references: [id])
+  chartOfAccountId String
+  chartOfAccount   ChartOfAccount  @relation(fields: [chartOfAccountId], references: [id])
+  originalAmount   Decimal
+  discountAmount   Decimal         @default(0)
+  interestAmount   Decimal         @default(0)
+  paidAmount       Decimal         @default(0)
+  competenceDate   DateTime
+  issueDate        DateTime        @default(now())
+  dueDate          DateTime
+  paidAt           DateTime?
+  status           PaymentStatus   @default(EM_ABERTO)
+  bankAccountId    String?
+  bankAccount      BankAccount?    @relation("BankPayable", fields: [bankAccountId], references: [id])
+  creditCardInvoiceId String?
+  creditCardInvoice CreditCardInvoice? @relation(fields: [creditCardInvoiceId], references: [id])
+  installmentNumber Int?
+  totalInstallments Int?
+  debtInstallmentId String?
+  debtInstallment  DebtInstallment? @relation(fields: [debtInstallmentId], references: [id], onDelete: SetNull)
+  notes            String?
+  attachmentUrl    String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  allocations      CostAllocation[]
+  commissions      CommissionRecord[]
+
+  @@map("accounts_payable")
+}
+
+enum ReceivableStatus {
+  RASCUNHO
+  A_RECEBER
+  A_VENCER
+  VENCIDA
+  PARCIALMENTE_RECEBIDA
+  RECEBIDA
+  RENEGOCIADA
+  CANCELADA
+}
+
+model AccountReceivable {
+  id               String           @id @default(uuid())
+  description      String
+  customerId       String?
+  customer         Customer?        @relation(fields: [customerId], references: [id])
+  costCenterId     String
+  costCenter       CostCenter       @relation(fields: [costCenterId], references: [id])
+  chartOfAccountId String
+  chartOfAccount   ChartOfAccount   @relation(fields: [chartOfAccountId], references: [id])
+  originalAmount   Decimal
+  discountAmount   Decimal          @default(0)
+  interestAmount   Decimal          @default(0)
+  receivedAmount   Decimal          @default(0)
+  competenceDate   DateTime
+  issueDate        DateTime         @default(now())
+  dueDate          DateTime
+  receivedAt       DateTime?
+  status           ReceivableStatus @default(A_RECEBER)
+  bankAccountId    String?
+  bankAccount      BankAccount?     @relation("BankReceivable", fields: [bankAccountId], references: [id])
+  contractId       String?
+  contract         Contract?        @relation(fields: [contractId], references: [id])
+  orderId          String?
+  order            Order?           @relation(fields: [orderId], references: [id])
+  notes            String?
+  attachmentUrl    String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  commissions      CommissionRecord[]
+
+  @@map("accounts_receivable")
+}
+
+model CostAllocation {
+  id                 String          @id @default(uuid())
+  accountPayableId   String
+  accountPayable     AccountPayable  @relation(fields: [accountPayableId], references: [id], onDelete: Cascade)
+  costCenterId       String
+  costCenter         CostCenter      @relation(fields: [costCenterId], references: [id])
+  allocatedAmount    Decimal
+  allocatedPercentage Decimal
+  createdAt          DateTime        @default(now())
+
+  @@map("cost_allocations")
+}
+
+// ----------------------------------------------------
+// COMISSÕES
+// ----------------------------------------------------
+
+enum CommissionBaseType {
+  VALOR_BRUTO
+  VALOR_LIQUIDO
+  VALOR_FIXO
+}
+
+enum CommissionTriggerEvent {
+  VENDA_REALIZADA
+  RECEBIMENTO_EFETIVO
+  CONTRATO_ASSINADO
+  INDICACAO_CONVERTIDA
+}
+
+enum CommissionStatus {
+  PREVISTA
+  EM_APURACAO
+  APROVADA
+  A_PAGAR
+  PARCIALMENTE_PAGA
+  PAGA
+  CANCELADA
+}
+
+model CommissionRule {
+  id           String                 @id @default(uuid())
+  name         String
+  beneficiary  String                 // Vendedor, parceiro ou afiliado
+  costCenterId String
+  costCenter   CostCenter             @relation(fields: [costCenterId], references: [id])
+  baseType     CommissionBaseType     @default(VALOR_BRUTO)
+  percentage   Decimal?               // Ex: 10.00 (%)
+  fixedAmount  Decimal?               // Se valor fixo
+  triggerEvent CommissionTriggerEvent @default(RECEBIMENTO_EFETIVO)
+  paymentTerms String?                // Condições para pagamento
+  isActive     Boolean                @default(true)
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  records      CommissionRecord[]
+
+  @@map("commission_rules")
+}
+
+model CommissionRecord {
+  id                 String           @id @default(uuid())
+  ruleId             String?
+  rule               CommissionRule?  @relation(fields: [ruleId], references: [id])
+  beneficiary        String
+  partnerId          String?
+  partner            Partner?         @relation(fields: [partnerId], references: [id])
+  orderId            String?
+  order              Order?           @relation(fields: [orderId], references: [id])
+  contractId         String?
+  contract           Contract?        @relation(fields: [contractId], references: [id])
+  receivableId       String?
+  receivable         AccountReceivable? @relation(fields: [receivableId], references: [id])
+  calculationBase    Decimal          // Base de cálculo utilizada
+  rateApplied        Decimal          // % ou valor aplicado
+  calculatedAmount   Decimal          // Valor final da comissão
+  paidAmount         Decimal          @default(0)
+  status             CommissionStatus @default(PREVISTA)
+  accountPayableId   String?          // Vínculo quando aprovada para virar conta a pagar
+  accountPayable     AccountPayable?  @relation(fields: [accountPayableId], references: [id])
+  approvalNotes      String?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@map("commission_records")
+}
+
+// ----------------------------------------------------
+// DÍVIDAS E OBRIGAÇÕES FINANCEIRAS
+// ----------------------------------------------------
+
+enum DebtType {
+  EMPRESTIMO_BANCARIO
+  FINANCIAMENTO
+  DIVIDA_FORNECEDOR
+  MUTUO_SOCIO
+  OBRIGACAO_TERCEIROS
+  PARCELAMENTO_FISCAL
+  RENEGOCIACAO
+}
+
+enum DebtStatus {
+  ATIVO
+  EM_ANDAMENTO
+  QUITADO
+  RENEGOCIADO
+  INADIMPLENTE
+}
+
+model DebtObligation {
+  id               String          @id @default(uuid())
+  creditorName     String          // Nome do credor ou banco
+  type             DebtType        @default(EMPRESTIMO_BANCARIO)
+  companyId        String
+  company          Company         @relation(fields: [companyId], references: [id])
+  costCenterId     String
+  costCenter       CostCenter      @relation(fields: [costCenterId], references: [id])
+  bankAccountId    String?
+  bankAccount      BankAccount?    @relation(fields: [bankAccountId], references: [id])
+  supplierId       String?
+  supplier         Supplier?       @relation(fields: [supplierId], references: [id])
+  contractDate     DateTime        @default(now())
+  originalAmount   Decimal         // Principal contratado
+  currentBalance   Decimal         // Saldo devedor atualizado
+  interestRate     Decimal?        // Taxa de juros mensal ou anual (%)
+  totalInstallments Int            @default(1)
+  guarantees       String?         // Garantias fornecidas
+  notes            String?
+  status           DebtStatus      @default(ATIVO)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  installments     DebtInstallment[]
+
+  @@map("debt_obligations")
+}
+
+model DebtInstallment {
+  id               String          @id @default(uuid())
+  debtId           String
+  debt             DebtObligation  @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  installmentNumber Int
+  dueDate          DateTime
+  principalAmount  Decimal         // Amortização do principal
+  interestAmount   Decimal         @default(0) // Juros e encargos
+  totalAmount      Decimal         // Principal + Juros
+  isPaid           Boolean         @default(false)
+  paidAt           DateTime?
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  accountsPayable  AccountPayable[]
+
+  @@map("debt_installments")
+}
+
+// ----------------------------------------------------
+// METAS E PLANEJAMENTO
+// ----------------------------------------------------
+
+enum GoalPeriod {
+  DIARIA
+  SEMANAL
+  MENSAL
+  TRIMESTRAL
+  SEMESTRAL
+  ANUAL
+}
+
+enum GoalDirection {
+  AUMENTO   // Ex: faturamento, vendas, clientes
+  REDUCAO   // Ex: despesas, dívidas, inadimplência
+}
+
+enum GoalStatus {
+  NAO_INICIADA
+  EM_ANDAMENTO
+  ATINGIDA
+  SUPERADA
+  PARCIALMENTE_ATINGIDA
+  NAO_ATINGIDA
+  CANCELADA
+}
+
+model PerformanceGoal {
+  id              String        @id @default(uuid())
+  title           String        // Ex: "Faturamento Mensal D.A. Velas"
+  description     String?
+  costCenterId    String
+  costCenter      CostCenter    @relation(fields: [costCenterId], references: [id])
+  period          GoalPeriod    @default(MENSAL)
+  direction       GoalDirection @default(AUMENTO)
+  unit            String        @default("BRL") // BRL, UNIDADES, CLIENTES, PORCENTAGEM
+  targetValue     Decimal       // Valor planejado
+  currentValue    Decimal       @default(0) // Valor apurado real
+  startDate       DateTime
+  endDate         DateTime
+  responsibleName String?       // Responsável
+  status          GoalStatus    @default(EM_ANDAMENTO)
+  justification   String?       // Justificativa caso não atingida
+  actionPlan      String?       // Plano de ação corretivo
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("performance_goals")
+}
+
+// ----------------------------------------------------
+// CATÁLOGO, ESTOQUE E PRODUÇÃO D.A. COM CARINHO
+// ----------------------------------------------------
+
+enum ProductCategory {
+  VELAS_NORMAIS_COLORIDAS
+  VELAS_DECORADAS_FLORES
+  CHANTILLY_E_FLOR
+  VASOS_DECORATIVOS
+  COLECAO_NATAL
+  ARVORES_NATAL_AVULSAS
+  ARVORES_NATAL_COPO
+  RESINAS_DIVERSAS
+}
+
+model Product {
+  id          String          @id @default(uuid())
+  name        String
+  category    ProductCategory
+  weightGrams Int?
+  volumeMl    Int?
+  basePrice   Decimal
+  calculatedCost Decimal      @default(0)
+  stockQuantity Int           @default(0)
+  minStockQuantity Int        @default(5)
+  description String?
+  photoUrl    String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  technicalSheets TechnicalSheet[]
+  orderItems      OrderItem[]
+
+  @@map("products")
+}
+
+model RawMaterial {
+  id          String   @id @default(uuid())
+  name        String
+  category    String
+  unit        String
+  currentStock Decimal @default(0)
+  minStock    Decimal  @default(0)
+  unitCost    Decimal  @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sheetItems  TechnicalSheetItem[]
+
+  @@map("raw_materials")
+}
+
+model TechnicalSheet {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  version     Int      @default(1)
+  gasCostEstimated Decimal @default(0.20)
+  energyCostEstimated Decimal @default(0.45)
+  laborCostEstimated Decimal @default(20.00)
+  wastePercentage Decimal @default(5.00)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items       TechnicalSheetItem[]
+
+  @@map("technical_sheets")
+}
+
+model TechnicalSheetItem {
+  id               String         @id @default(uuid())
+  technicalSheetId String
+  technicalSheet   TechnicalSheet @relation(fields: [technicalSheetId], references: [id], onDelete: Cascade)
+  rawMaterialId    String
+  rawMaterial      RawMaterial    @relation(fields: [rawMaterialId], references: [id])
+  quantity         Decimal
+  createdAt        DateTime       @default(now())
+
+  @@map("technical_sheet_items")
+}
+
+model ProductionOrder {
+  id             String    @id @default(uuid())
+  batchNumber    String    @unique
+  productionDate DateTime  @default(now())
+  costCenter     String
+  materialCost   Decimal   @default(0)
+  gasCost        Decimal   @default(0)
+  energyCost     Decimal   @default(0)
+  laborCost      Decimal   @default(0)
+  totalCost      Decimal   @default(0)
+  notes          String?
+  isHistorical   Boolean   @default(false)
+  isConfirmed    Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("production_orders")
+}
+
+// ----------------------------------------------------
+// CONTRATOS E VENDAS
+// ----------------------------------------------------
+
+enum ContractStatus {
+  RASCUNHO
+  AGUARDANDO_REVISAO
+  ENVIADO
+  AGUARDANDO_ASSINATURA
+  ATIVO
+  SUSPENSO
+  ENCERRADO
+  CANCELADO
+}
+
+enum ContractType {
+  CASSARATECH_SUPORTE_MANUTENCAO
+  CASSARATECH_DESENVOLVIMENTO_UNICO
+  DA_COM_CARINHO_ENCOMENDA
+  MIDIA_SOCIAL_GESTAO_MENSAL
+  MIDIA_SOCIAL_SERVICO_AVULSO
+}
+
+model Contract {
+  id             String         @id @default(uuid())
+  contractNumber String         @unique
+  companyId      String
+  company        Company        @relation(fields: [companyId], references: [id])
+  customerId     String
+  customer       Customer       @relation(fields: [customerId], references: [id])
+  type           ContractType
+  status         ContractStatus @default(RASCUNHO)
+  title          String
+  scope          String
+  monthlyFee     Decimal?
+  totalAmount    Decimal
+  startDate      DateTime
+  endDate        DateTime?
+  contentHtml    String?
+  signedDocumentUrl String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  receivables    AccountReceivable[]
+  commissions    CommissionRecord[]
+
+  @@map("contracts")
+}
+
+model Order {
+  id             String    @id @default(uuid())
+  orderNumber    String    @unique
+  customerId     String
+  customer       Customer  @relation(fields: [customerId], references: [id])
+  totalAmount    Decimal
+  discountAmount Decimal   @default(0)
+  channel        String
+  status         String    @default("CONCLUIDO")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  items          OrderItem[]
+  receivables    AccountReceivable[]
+  commissions    CommissionRecord[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPrice   Decimal
+  totalPrice  Decimal
+  createdAt   DateTime @default(now())
+
+  @@map("order_items")
+}
+
+// ----------------------------------------------------
+// GESTÃO DE MÍDIA SOCIAL & MARKETING
+// ----------------------------------------------------
+
+enum MediaTargetType {
+  DIVULGACAO_PROPRIA
+  VERBA_CLIENTE
+  GESTAO_HONORARIOS
+}
+
+model MediaExpense {
+  id           String          @id @default(uuid())
+  date         DateTime
+  costCenterId String
+  costCenter   CostCenter      @relation(fields: [costCenterId], references: [id])
+  targetType   MediaTargetType @default(DIVULGACAO_PROPRIA)
+  platform     String
+  campaignName String
+  budgeted     Decimal         @default(0)
+  spentAmount  Decimal         @default(0)
+  clientName   String?
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@map("media_expenses")
+}
+
+// ----------------------------------------------------
+// INVESTIMENTOS E RECUPERAÇÃO DE CAPITAL (D.A. R$ 1.600)
+// ----------------------------------------------------
+
+model CapitalRecovery {
+  id                  String   @id @default(uuid())
+  initialCapital      Decimal  @default(1600.00)
+  additionalAports    Decimal  @default(0)
+  recoveredAmount     Decimal  @default(0)
+  notes               String?
+  updatedAt           DateTime @updatedAt
+  createdAt           DateTime @default(now())
+
+  @@map("capital_recoveries")
+}
