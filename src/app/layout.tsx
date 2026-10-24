@@ -17,23 +17,37 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "CassaraTech & D.A. Com Carinho — Soluções Empresariais, Velas Aromáticas e Tecnologia",
-    template: "%s | CassaraTech & D.A. Com Carinho",
+    default: "CassaraTech & D.A. Com Carinho — ERP Integrado, Tecnologia e Artesanato",
+    template: "%s | CassaraTech ERP",
   },
   description:
-    "Gestão empresarial integrada, desenvolvimento de sistemas sob medida, marketing digital, velas aromáticas artesanais e peças decorativas em resina personalizadas. Solicite seu orçamento online.",
+    "ERP Integrado de gestão empresarial multinegócios, desenvolvimento de sistemas sob medida, marketing digital, velas aromáticas artesanais e peças decorativas em resina personalizadas.",
   keywords: [
-    "velas aromáticas artesanais",
-    "lembrancinhas personalizadas",
-    "peças em resina epóxi",
+    "ERP integrado",
+    "ERP empresarial",
+    "gestão financeira ERP",
+    "CassaraTech ERP",
     "desenvolvimento de software",
     "sistemas web sob medida",
     "marketing digital e tráfego pago",
     "gestão de redes sociais",
+    "velas aromáticas artesanais",
+    "lembrancinhas personalizadas",
+    "peças em resina epóxi",
     "D.A. Com Carinho",
     "CassaraTech",
-    "sistema de gestão empresarial",
   ],
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon-192.png", type: "image/png", sizes: "192x192" },
+      { url: "/icon-512.png", type: "image/png", sizes: "512x512" },
+    ],
+    apple: [
+      { url: "/apple-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+    shortcut: ["/favicon.ico"],
+  },
   authors: [{ name: "CassaraTech & D.A. Com Carinho" }],
   creator: "CassaraTech",
   publisher: "CassaraTech",
@@ -49,10 +63,18 @@ export const metadata: Metadata = {
     type: "website",
     locale: "pt_BR",
     url: siteUrl,
-    siteName: "CassaraTech & D.A. Com Carinho",
-    title: "CassaraTech & D.A. Com Carinho — Tecnologia, Velas Artesanais e Resinas",
+    siteName: "CassaraTech & D.A. Com Carinho — ERP Integrado",
+    title: "CassaraTech & D.A. Com Carinho — ERP Integrado, Tecnologia e Artesanato",
     description:
-      "Plataforma completa de soluções empresariais: desenvolvimento de sistemas, velas aromáticas decorativas, peças em resina e gestão de redes sociais.",
+      "ERP Integrado de alta performance para tecnologia, velas aromáticas decorativas, peças em resina e gestão de redes sociais.",
+    images: [
+      {
+        url: `${siteUrl}/logo.png`,
+        width: 1008,
+        height: 453,
+        alt: "CassaraTech ERP Logo",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",

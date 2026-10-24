@@ -54,11 +54,15 @@ export default function LoginPage() {
 
       <div className="w-full max-w-md bg-slate-800/90 border border-slate-700/80 rounded-2xl shadow-2xl backdrop-blur-xl p-6 sm:p-8 relative z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-gradient-to-tr from-indigo-600 to-violet-500 text-white rounded-2xl shadow-lg shadow-indigo-500/30 mb-3">
-            <Shield className="w-7 h-7" />
+          <div className="flex justify-center mb-5">
+            <img
+              src="/logo.png"
+              alt="CassaraTech ERP"
+              className="h-16 w-auto object-contain drop-shadow-xl"
+            />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight">SGE Integrado</h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold text-white tracking-tight">ERP Integrado</h1>
+          <p className="text-xs text-slate-400 mt-1">
             CassaraTech • D.A. Com Carinho • Mídia Social • Casa
           </p>
         </div>

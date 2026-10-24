@@ -1,6 +1,6 @@
 import React from "react";
 import { db } from "@/lib/db";
-import { ArrowDownCircle, Plus, Calendar, Tag, AlertCircle } from "lucide-react";
+import { ArrowDownCircle } from "lucide-react";
 import { PayablesClientView } from "./PayablesClientView";
 
 export default async function AccountsPayablePage() {
@@ -9,11 +9,13 @@ export default async function AccountsPayablePage() {
       costCenter: true,
       chartOfAccount: true,
       supplier: true,
+      bankAccount: true,
     },
     orderBy: { dueDate: "asc" },
   });
 
   const costCenters = await db.costCenter.findMany();
+  const bankAccounts = await db.bankAccount.findMany();
   const accounts = await db.chartOfAccount.findMany({
     where: {
       type: {
@@ -37,7 +39,7 @@ export default async function AccountsPayablePage() {
             Contas a Pagar
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Controle de compromissos com rateio por centros de custo, auditoria e prevenção contra duplicações.
+            Controle de compromissos com filtros de tipo de pagamento, programação fixa, baixa integrada e edição.
           </p>
         </div>
       </div>
@@ -46,6 +48,7 @@ export default async function AccountsPayablePage() {
         initialPayables={payables}
         costCenters={costCenters}
         accounts={accounts}
+        bankAccounts={bankAccounts}
       />
     </div>
   );

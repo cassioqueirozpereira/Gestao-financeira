@@ -266,6 +266,9 @@ model Customer {
   partnerId      String?
   partner        Partner?    @relation(fields: [partnerId], references: [id], onDelete: SetNull)
   notes          String?
+  paymentMethod  String?     @default("PIX")
+  monthlyFee     Decimal?    @default(0)
+  billingDay     Int?        @default(10)
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
@@ -357,6 +360,9 @@ model AccountPayable {
   issueDate        DateTime        @default(now())
   dueDate          DateTime
   paidAt           DateTime?
+  paymentType      String?         @default("BOLETO")
+  scheduledDate    DateTime?
+  isFixed          Boolean         @default(false)
   status           PaymentStatus   @default(EM_ABERTO)
   bankAccountId    String?
   bankAccount      BankAccount?    @relation("BankPayable", fields: [bankAccountId], references: [id])
@@ -405,6 +411,7 @@ model AccountReceivable {
   issueDate        DateTime         @default(now())
   dueDate          DateTime
   receivedAt       DateTime?
+  paymentType      String?          @default("PIX")
   status           ReceivableStatus @default(A_RECEBER)
   bankAccountId    String?
   bankAccount      BankAccount?     @relation("BankReceivable", fields: [bankAccountId], references: [id])
@@ -496,6 +503,7 @@ model CommissionRecord {
   receivableId       String?
   receivable         AccountReceivable? @relation(fields: [receivableId], references: [id])
   calculationBase    Decimal          // Base de cálculo utilizada
+  baseType           String?          @default("TOTAL") // TOTAL, INSTALACAO, MENSALIDADE
   rateApplied        Decimal          // % ou valor aplicado
   calculatedAmount   Decimal          // Valor final da comissão
   paidAmount         Decimal          @default(0)
@@ -653,6 +661,7 @@ model Product {
   volumeMl    Int?
   basePrice   Decimal
   calculatedCost Decimal      @default(0)
+  desiredMargin  Decimal?     @default(30)
   stockQuantity Int           @default(0)
   minStockQuantity Int        @default(5)
   description String?
@@ -766,6 +775,9 @@ model Contract {
   title          String
   scope          String
   monthlyFee     Decimal?
+  installationFee Decimal?      @default(0)
+  paymentMethod  String?        @default("BOLETO")
+  billingDay     Int?           @default(10)
   totalAmount    Decimal
   startDate      DateTime
   endDate        DateTime?

@@ -1,25 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
-
-const updateLeadStatusSchema = z.object({
-  customerId: z.string().min(1),
-  status: z.enum([
-    "NOVO_CONTATO",
-    "EM_ATENDIMENTO",
-    "LEVANTAMENTO",
-    "PROPOSTA_ELABORACAO",
-    "PROPOSTA_ENVIADA",
-    "NEGOCIACAO",
-    "APROVADA",
-    "PERDIDA",
-    "CONVERTIDA",
-  ]),
-});
 
 export async function GET() {
   try {
@@ -31,9 +15,8 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
     return NextResponse.json({ customers });
-  } catch (error) {
-    console.error("Erro ao listar CRM:", error);
-    return NextResponse.json({ error: "Erro ao buscar clientes" }, { status: 500 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
 
@@ -43,31 +26,71 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json();
-    const parsed = updateLeadStatusSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Dados inválidos", details: parsed.error.format() }, { status: 400 });
+    const { action = "create_lead" } = body;
+
+    // AÇÃO 1: AVANÇAR ETAPA / PRÓXIMO PASSO
+    if (action === "update_step" || action === "advance_status") {
+      const { customerId, status, notes } = body;
+      const customer = await db.customer.update({
+        where: { id: customerId },
+        data: {
+          status,
+          notes: notes !== undefined ? notes : undefined,
+        },
+      });
+
+      await logAudit({
+        userId: user.id,
+        action: "STATUS_CHANGE",
+        entity: "CustomerLead",
+        entityId: customerId,
+        newValues: { status, notes },
+        ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+        description: `Lead "${customer.name}" avançou para etapa: ${status}`,
+      });
+
+      return NextResponse.json({ success: true, customer });
     }
 
-    const { customerId, status } = parsed.data;
+    // AÇÃO 2: ADICIONAR NOVO LEAD / CLIENTE
+    const {
+      name,
+      email,
+      phone,
+      documentNumber,
+      interestedIn = "Sistemas",
+      notes,
+      estimatedBudget = 0,
+    } = body;
 
-    const customer = await db.customer.update({
-      where: { id: customerId },
-      data: { status },
+    if (!name || !phone) {
+      return NextResponse.json({ error: "Nome e Telefone são obrigatórios" }, { status: 400 });
+    }
+
+    const newLead = await db.customer.create({
+      data: {
+        name,
+        email: email || null,
+        phone,
+        documentNumber: documentNumber || null,
+        interestedIn,
+        notes: notes ? `Orçamento Estimado: R$ ${estimatedBudget}. ${notes}` : `Orçamento Estimado: R$ ${estimatedBudget}`,
+        status: "NOVO_CONTATO",
+      },
     });
 
     await logAudit({
       userId: user.id,
-      action: "STATUS_CHANGE",
+      action: "CREATE",
       entity: "CustomerLead",
-      entityId: customerId,
-      newValues: { status },
+      entityId: newLead.id,
+      newValues: newLead,
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-      description: `Lead "${customer.name}" avançou para etapa: ${status}`,
+      description: `Cadastro de novo lead no CRM: ${name}`,
     });
 
-    return NextResponse.json({ success: true, customer });
-  } catch (error) {
-    console.error("Erro na API de CRM:", error);
-    return NextResponse.json({ error: "Erro interno no servidor" }, { status: 500 });
+    return NextResponse.json({ success: true, customer: newLead });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

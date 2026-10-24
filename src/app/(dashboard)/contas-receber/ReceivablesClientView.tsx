@@ -1,7 +1,20 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, X, ArrowUpCircle, CheckCircle2, AlertCircle, DollarSign } from "lucide-react";
+import {
+  Plus,
+  X,
+  ArrowUpCircle,
+  CheckCircle2,
+  AlertCircle,
+  DollarSign,
+  Filter,
+  Edit2,
+  Calendar,
+  CreditCard,
+  Building2,
+  CheckSquare,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface ReceivablesClientViewProps {
@@ -19,9 +32,20 @@ export function ReceivablesClientView({
 }: ReceivablesClientViewProps) {
   const router = useRouter();
   const [receivables, setReceivables] = useState(initialReceivables);
+
+  // Filtros Avançados
+  const [filterStartDate, setFilterStartDate] = useState("");
+  const [filterEndDate, setFilterEndDate] = useState("");
+  const [filterStatus, setFilterStatus] = useState("TODOS");
+  const [filterPaymentType, setFilterPaymentType] = useState("TODOS");
+  const [filterCostCenter, setFilterCostCenter] = useState("TODOS");
+
+  // Modais
   const [showModal, setShowModal] = useState(false);
   const [receiveModal, setReceiveModal] = useState<any | null>(null);
+  const [editingModal, setEditingModal] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Form states de criação
@@ -31,12 +55,27 @@ export function ReceivablesClientView({
   const [chartOfAccountId, setChartOfAccountId] = useState(accounts[0]?.id || "");
   const [originalAmount, setOriginalAmount] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [paymentType, setPaymentType] = useState("PIX");
   const [competenceDate, setCompetenceDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
 
-  // Form states de liquidação
+  // Form states de liquidação (baixa)
   const [receivedAmount, setReceivedAmount] = useState("");
   const [receivedAt, setReceivedAt] = useState(new Date().toISOString().split("T")[0]);
+
+  // Form states de edição
+  const [editForm, setEditForm] = useState({
+    description: "",
+    originalAmount: "",
+    dueDate: "",
+    competenceDate: "",
+    customerId: "",
+    costCenterId: "",
+    chartOfAccountId: "",
+    paymentType: "PIX",
+    status: "A_RECEBER",
+    notes: "",
+  });
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,11 +88,12 @@ export function ReceivablesClientView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           description,
-          customerId,
+          customerId: customerId || undefined,
           costCenterId,
           chartOfAccountId,
           originalAmount: parseFloat(originalAmount),
           dueDate,
+          paymentType,
           competenceDate,
           notes,
         }),
@@ -66,6 +106,7 @@ export function ReceivablesClientView({
       setShowModal(false);
       setDescription("");
       setOriginalAmount("");
+      setFeedback("Conta a receber lançada com sucesso!");
       router.refresh();
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -93,10 +134,17 @@ export function ReceivablesClientView({
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erro ao baixar recebível");
+      if (!res.ok) throw new Error(data.error || "Erro ao dar baixa");
 
-      setReceivables(receivables.map((r) => (r.id === data.receivable.id ? data.receivable : r)));
+      setReceivables(
+        receivables.map((r) =>
+          r.id === receiveModal.id
+            ? { ...r, status: "RECEBIDA", receivedAmount: parseFloat(receivedAmount), receivedAt }
+            : r
+        )
+      );
       setReceiveModal(null);
+      setFeedback("Recebimento confirmado e adicionado ao saldo!");
       router.refresh();
     } catch (err: any) {
       setErrorMsg(err.message);
@@ -105,83 +153,343 @@ export function ReceivablesClientView({
     }
   };
 
+  const handleOpenEdit = (rec: any) => {
+    setEditingModal(rec);
+    setEditForm({
+      description: rec.description,
+      originalAmount: String(rec.originalAmount),
+      dueDate: new Date(rec.dueDate).toISOString().split("T")[0],
+      competenceDate: new Date(rec.competenceDate).toISOString().split("T")[0],
+      customerId: rec.customerId || "",
+      costCenterId: rec.costCenterId,
+      chartOfAccountId: rec.chartOfAccountId,
+      paymentType: rec.paymentType || "PIX",
+      status: rec.status,
+      notes: rec.notes || "",
+    });
+  };
+
+  const handleConfirmEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingModal) return;
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/contas-receber", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingModal.id,
+          ...editForm,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao editar lançamento");
+
+      setReceivables(
+        receivables.map((r) => (r.id === editingModal.id ? { ...r, ...data.updated } : r))
+      );
+      setEditingModal(null);
+      setFeedback("Lançamento a receber atualizado com sucesso!");
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
+  // Aplicação dos Filtros
+  const filteredReceivables = receivables.filter((r) => {
+    if (filterStatus !== "TODOS" && r.status !== filterStatus) return false;
+    if (filterCostCenter !== "TODOS" && r.costCenterId !== filterCostCenter) return false;
+    if (filterPaymentType !== "TODOS" && (r.paymentType || "PIX") !== filterPaymentType) return false;
+
+    if (filterStartDate) {
+      const due = new Date(r.dueDate).toISOString().split("T")[0];
+      if (due < filterStartDate) return false;
+    }
+    if (filterEndDate) {
+      const due = new Date(r.dueDate).toISOString().split("T")[0];
+      if (due > filterEndDate) return false;
+    }
+
+    return true;
+  });
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
+    <div className="space-y-5">
+      {/* Top Action */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          Listando {filteredReceivables.length} contas a receber
+        </span>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
+          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
         >
           <Plus className="w-4 h-4" />
           Novo Lançamento a Receber
         </button>
       </div>
 
-      {/* Modal Novo Recebível */}
+      {feedback && (
+        <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-300 rounded-xl text-xs flex justify-between items-center">
+          <span>{feedback}</span>
+          <button onClick={() => setFeedback(null)} className="font-bold uppercase">Fechar</button>
+        </div>
+      )}
+
+      {/* Painel / Aba de Filtros Avançados */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+          <Filter className="w-3.5 h-3.5 text-emerald-500" />
+          <span>Filtros do Contas a Receber</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Data Início (Vencimento)
+            </label>
+            <input
+              type="date"
+              value={filterStartDate}
+              onChange={(e) => setFilterStartDate(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Data Fim (Vencimento)
+            </label>
+            <input
+              type="date"
+              value={filterEndDate}
+              onChange={(e) => setFilterEndDate(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Status
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            >
+              <option value="TODOS">Todos os Status</option>
+              <option value="A_RECEBER">A Receber</option>
+              <option value="RECEBIDA">Recebida</option>
+              <option value="VENCIDA">Vencida</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Forma de Pagamento
+            </label>
+            <select
+              value={filterPaymentType}
+              onChange={(e) => setFilterPaymentType(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            >
+              <option value="TODOS">Todas as Formas</option>
+              <option value="PIX">PIX</option>
+              <option value="BOLETO">Boleto Bancário</option>
+              <option value="CARTAO">Cartão de Crédito</option>
+              <option value="TRANSFERENCIA">Transferência / TED</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Centro de Custo
+            </label>
+            <select
+              value={filterCostCenter}
+              onChange={(e) => setFilterCostCenter(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            >
+              <option value="TODOS">Todos os Centros</option>
+              {costCenters.map((cc) => (
+                <option key={cc.id} value={cc.id}>{cc.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabela de Contas a Receber */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs sm:text-sm">
+            <thead className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
+              <tr>
+                <th className="px-4 py-3.5">Descrição</th>
+                <th className="px-4 py-3.5">Cliente</th>
+                <th className="px-4 py-3.5">Centro de Custo</th>
+                <th className="px-4 py-3.5">Forma</th>
+                <th className="px-4 py-3.5">Vencimento</th>
+                <th className="px-4 py-3.5">Valor (R$)</th>
+                <th className="px-4 py-3.5">Status</th>
+                <th className="px-4 py-3.5 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredReceivables.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="text-center py-10 text-slate-400">
+                    Nenhuma conta a receber encontrada com os filtros informados.
+                  </td>
+                </tr>
+              ) : (
+                filteredReceivables.map((r) => {
+                  const isReceived = r.status === "RECEBIDA";
+                  const dueDate = new Date(r.dueDate);
+                  const isOverdue = !isReceived && dueDate < new Date();
+
+                  return (
+                    <tr
+                      key={r.id}
+                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <td className="px-4 py-3.5 font-bold text-slate-900 dark:text-white">
+                        {r.description}
+                        {r.notes && <p className="text-[11px] text-slate-400 font-normal">{r.notes}</p>}
+                      </td>
+
+                      <td className="px-4 py-3.5 text-slate-700 dark:text-slate-300">
+                        {r.customer?.name || "Consumidor Avulso"}
+                      </td>
+
+                      <td className="px-4 py-3.5 text-xs text-slate-600 dark:text-slate-400">
+                        {r.costCenter?.name || "Geral"}
+                      </td>
+
+                      <td className="px-4 py-3.5 text-xs">
+                        <span className="px-2 py-0.5 rounded font-semibold bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                          {r.paymentType || "PIX"}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <div className={isOverdue ? "text-red-500 font-bold" : "text-slate-600 dark:text-slate-300"}>
+                          {dueDate.toLocaleDateString("pt-BR")}
+                        </div>
+                        {r.receivedAt && (
+                          <div className="text-[10px] text-emerald-500 font-medium">
+                            Recebido em: {new Date(r.receivedAt).toLocaleDateString("pt-BR")}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5 font-extrabold text-slate-900 dark:text-white">
+                        {formatBRL(Number(r.originalAmount))}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            isReceived
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                              : isOverdue
+                              ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                              : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400"
+                          }`}
+                        >
+                          {r.status}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3.5 text-right space-x-2">
+                        {!isReceived && (
+                          <button
+                            onClick={() => {
+                              setReceiveModal(r);
+                              setReceivedAmount(String(r.originalAmount));
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+                            title="Confirmar Recebimento"
+                          >
+                            <CheckSquare className="w-3.5 h-3.5" />
+                            <span>Baixar</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleOpenEdit(r)}
+                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                          title="Editar lançamento efetuado"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal - Criação */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative text-xs">
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
-              Cadastrar Conta a Receber
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
+              Lançar Nova Conta a Receber
             </h3>
-
-            {errorMsg && (
-              <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl flex items-center gap-2">
-                <AlertCircle className="w-4 h-4" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleCreate} className="space-y-4">
+            <form onSubmit={handleCreate} className="space-y-4 text-xs sm:text-sm">
               <div>
-                <label className="block font-semibold mb-1">Descrição do Recebível *</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Descrição do Recebimento *
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Venda de Velas Aromáticas, Mensalidade CassaraTech..."
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  placeholder="Ex: Mensalidade Sistema CassaraTech"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold mb-1">Centro de Custo</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Cliente
+                  </label>
                   <select
-                    value={costCenterId}
-                    onChange={(e) => setCostCenterId(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                    value={customerId}
+                    onChange={(e) => setCustomerId(e.target.value)}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
                   >
-                    {costCenters.map((cc) => (
-                      <option key={cc.id} value={cc.id}>
-                        {cc.name}
-                      </option>
+                    <option value="">Consumidor Avulso</option>
+                    {customers.map((c) => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
                     ))}
                   </select>
                 </div>
-
                 <div>
-                  <label className="block font-semibold mb-1">Categoria Contábil</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Centro de Custo *
+                  </label>
                   <select
-                    value={chartOfAccountId}
-                    onChange={(e) => setChartOfAccountId(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                    value={costCenterId}
+                    onChange={(e) => setCostCenterId(e.target.value)}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
                   >
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.code} - {a.name}
-                      </option>
+                    {costCenters.map((cc) => (
+                      <option key={cc.id} value={cc.id}>{cc.name}</option>
                     ))}
                   </select>
                 </div>
@@ -189,55 +497,61 @@ export function ReceivablesClientView({
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-semibold mb-1">Valor Previsto (R$) *</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Valor (R$) *
+                  </label>
                   <input
                     type="number"
                     step="0.01"
                     required
-                    placeholder="0,00"
                     value={originalAmount}
                     onChange={(e) => setOriginalAmount(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
                   />
                 </div>
-
                 <div>
-                  <label className="block font-semibold mb-1">Vencimento *</label>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Vencimento *
+                  </label>
                   <input
                     type="date"
                     required
                     value={dueDate}
                     onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
                   />
                 </div>
-
                 <div>
-                  <label className="block font-semibold mb-1">Competência</label>
-                  <input
-                    type="date"
-                    required
-                    value={competenceDate}
-                    onChange={(e) => setCompetenceDate(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
-                  />
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Forma Pgto
+                  </label>
+                  <select
+                    value={paymentType}
+                    onChange={(e) => setPaymentType(e.target.value)}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                  >
+                    <option value="PIX">PIX</option>
+                    <option value="BOLETO">Boleto</option>
+                    <option value="CARTAO">Cartão</option>
+                    <option value="TRANSFERENCIA">Transferência</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="pt-2 flex justify-end gap-2">
+              <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border rounded-xl"
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-semibold"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md"
                 >
-                  {loading ? "Salvando..." : "Salvar Recebível"}
+                  Salvar Lançamento
                 </button>
               </div>
             </form>
@@ -245,60 +559,56 @@ export function ReceivablesClientView({
         </div>
       )}
 
-      {/* Modal Confirmar Recebimento */}
+      {/* Modal - Dar Baixa */}
       {receiveModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative text-xs">
-            <button
-              onClick={() => setReceiveModal(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
-              Confirmar Recebimento Efetivo
+              Confirmar Recebimento de Valor
             </h3>
-            <p className="text-slate-500 mb-4">{receiveModal.description}</p>
-
-            <form onSubmit={handleReceive} className="space-y-3.5">
+            <p className="text-xs text-slate-500 mb-4">{receiveModal.description}</p>
+            <form onSubmit={handleReceive} className="space-y-4 text-xs sm:text-sm">
               <div>
-                <label className="block font-semibold mb-1">Valor Efetivamente Recebido (R$)</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Valor Recebido (R$) *
+                </label>
                 <input
                   type="number"
                   step="0.01"
                   required
                   value={receivedAmount}
                   onChange={(e) => setReceivedAmount(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold mb-1">Data Efetiva de Entrada</label>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Data de Entrada *
+                </label>
                 <input
                   type="date"
                   required
                   value={receivedAt}
                   onChange={(e) => setReceivedAt(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-2">
+              <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
                   onClick={() => setReceiveModal(null)}
-                  className="px-3 py-1.5 border rounded-xl"
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md"
                 >
-                  {loading ? "Confirmando..." : "Dar Baixa no Recebimento"}
+                  Confirmar Baixa
                 </button>
               </div>
             </form>
@@ -306,75 +616,108 @@ export function ReceivablesClientView({
         </div>
       )}
 
-      {/* Tabela de Recebíveis */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-        {receivables.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-xs">
-            Nenhuma conta a receber cadastrada. Clique em "Novo Lançamento a Receber" para registrar entradas previstas.
+      {/* Modal - Editar Lançamento */}
+      {editingModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
+              Editar Lançamento a Receber
+            </h3>
+            <form onSubmit={handleConfirmEdit} className="space-y-4 text-xs sm:text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Descrição
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Valor Original (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editForm.originalAmount}
+                    onChange={(e) => setEditForm({ ...editForm, originalAmount: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Vencimento
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editForm.dueDate}
+                    onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Forma de Pagamento
+                  </label>
+                  <select
+                    value={editForm.paymentType}
+                    onChange={(e) => setEditForm({ ...editForm, paymentType: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                  >
+                    <option value="PIX">PIX</option>
+                    <option value="BOLETO">Boleto Bancário</option>
+                    <option value="CARTAO">Cartão de Crédito</option>
+                    <option value="TRANSFERENCIA">Transferência</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                  >
+                    <option value="A_RECEBER">A Receber</option>
+                    <option value="RECEBIDA">Recebida</option>
+                    <option value="VENCIDA">Vencida</option>
+                    <option value="CANCELADA">Cancelada</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingModal(null)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
-                <tr>
-                  <th className="py-3 px-4">Descrição</th>
-                  <th className="py-3 px-4">Centro de Custo</th>
-                  <th className="py-3 px-4">Vencimento</th>
-                  <th className="py-3 px-4">Valor Previsto</th>
-                  <th className="py-3 px-4">Valor Recebido</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                {receivables.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition">
-                    <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white">
-                      {r.description}
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
-                      {r.costCenter?.name || "-"}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">
-                      {new Date(r.dueDate).toLocaleDateString("pt-BR")}
-                    </td>
-                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                      {formatBRL(Number(r.originalAmount))}
-                    </td>
-                    <td className="py-3 px-4 font-bold text-emerald-600">
-                      {r.status === "RECEBIDA" ? formatBRL(Number(r.receivedAmount)) : "-"}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          r.status === "RECEBIDA"
-                            ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400"
-                            : "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-400"
-                        }`}
-                      >
-                        {r.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      {r.status !== "RECEBIDA" && (
-                        <button
-                          onClick={() => {
-                            setReceiveModal(r);
-                            setReceivedAmount(String(r.originalAmount));
-                          }}
-                          className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
-                        >
-                          Confirmar Recebimento →
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

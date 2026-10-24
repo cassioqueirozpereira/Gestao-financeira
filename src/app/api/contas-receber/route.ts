@@ -141,3 +141,48 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Erro interno no servidor" }, { status: 500 });
   }
 }
+
+export async function PUT(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const body = await req.json();
+    const { id, description, originalAmount, dueDate, competenceDate, costCenterId, customerId, chartOfAccountId, paymentType, notes, status } = body;
+
+    if (!id) return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+
+    const existing = await db.accountReceivable.findUnique({ where: { id } });
+    if (!existing) return NextResponse.json({ error: "Conta a receber não encontrada" }, { status: 404 });
+
+    const updated = await db.accountReceivable.update({
+      where: { id },
+      data: {
+        description: description || existing.description,
+        originalAmount: originalAmount ? Number(originalAmount) : existing.originalAmount,
+        dueDate: dueDate ? new Date(dueDate) : existing.dueDate,
+        competenceDate: competenceDate ? new Date(competenceDate) : existing.competenceDate,
+        costCenterId: costCenterId || existing.costCenterId,
+        customerId: customerId !== undefined ? customerId : existing.customerId,
+        chartOfAccountId: chartOfAccountId || existing.chartOfAccountId,
+        paymentType: paymentType || existing.paymentType,
+        notes: notes !== undefined ? notes : existing.notes,
+        status: status || existing.status,
+      },
+    });
+
+    await logAudit({
+      userId: user.id,
+      action: "UPDATE",
+      entity: "AccountReceivable",
+      entityId: id,
+      newValues: updated,
+      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+      description: `Edição de conta a receber: ${updated.description}`,
+    });
+
+    return NextResponse.json({ success: true, updated });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

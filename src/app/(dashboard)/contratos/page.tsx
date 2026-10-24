@@ -8,6 +8,9 @@ export default async function ContractsPage() {
     include: {
       company: true,
       customer: true,
+      receivables: {
+        orderBy: { dueDate: "asc" },
+      },
     },
     orderBy: { createdAt: "desc" },
   });

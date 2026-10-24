@@ -23,6 +23,8 @@ import {
   Handshake,
   Landmark,
   LineChart,
+  Users,
+  CalendarClock,
   Menu,
   X,
   Sparkles,
@@ -31,22 +33,26 @@ import {
 const navigationItems = [
   { name: "Dashboard Geral", href: "/", icon: LayoutDashboard },
   { name: "Painel de Desempenho", href: "/desempenho", icon: LineChart },
-  { name: "Metas & Planejamento", href: "/metas", icon: Target },
-  { name: "Dívidas & Obrigações", href: "/dividas", icon: Landmark },
-  { name: "Controle de Comissões", href: "/comissoes", icon: Percent },
-  { name: "Gestão de Parcerias", href: "/parcerias", icon: Handshake },
-  { name: "Centros de Custo & Empresas", href: "/empresas", icon: Building2 },
-  { name: "Plano de Contas", href: "/plano-contas", icon: ListTree },
-  { name: "Contas a Pagar", href: "/contas-pagar", icon: ArrowDownCircle },
+  { name: "Clientes & Mensalidades", href: "/clientes", icon: Users },
+  { name: "Vendas Velas & Resinas", href: "/vendas", icon: ShoppingBag },
+  { name: "Títulos a Vencer", href: "/vencimentos", icon: CalendarClock },
   { name: "Contas a Receber", href: "/contas-receber", icon: ArrowUpCircle },
+  { name: "Contas a Pagar", href: "/contas-pagar", icon: ArrowDownCircle },
+  { name: "Faturas de Cartão", href: "/cartoes", icon: CreditCard },
   { name: "Fluxo de Caixa", href: "/fluxo-caixa", icon: Wallet },
-  { name: "Bancos & Cartões", href: "/bancos", icon: CreditCard },
-  { name: "Catálogo D.A. Com Carinho", href: "/catalogo", icon: ShoppingBag },
-  { name: "Produção & Custos", href: "/producao", icon: Flame },
+  { name: "Bancos & Saldos", href: "/bancos", icon: Landmark },
   { name: "CRM & Oportunidades", href: "/crm", icon: Layers },
   { name: "Contratos Automáticos", href: "/contratos", icon: FileText },
+  { name: "Catálogo D.A. Com Carinho", href: "/catalogo", icon: ShoppingBag },
+  { name: "Produção & Custos", href: "/producao", icon: Flame },
+  { name: "Controle de Comissões", href: "/comissoes", icon: Percent },
+  { name: "Metas & Planejamento", href: "/metas", icon: Target },
+  { name: "Dívidas & Obrigações", href: "/dividas", icon: Landmark },
   { name: "Gestão de Mídia Social", href: "/midia", icon: Megaphone },
+  { name: "Gestão de Parcerias", href: "/parcerias", icon: Handshake },
   { name: "Investimentos & Capital", href: "/investimentos", icon: TrendingUp },
+  { name: "Centros de Custo & Empresas", href: "/empresas", icon: Building2 },
+  { name: "Plano de Contas", href: "/plano-contas", icon: ListTree },
   { name: "Auditoria & Logs", href: "/auditoria", icon: ShieldCheck },
 ];
 
@@ -80,13 +86,15 @@ export function Sidebar() {
         }`}
       >
         {/* Brand Header */}
-        <div className="h-16 flex items-center px-6 border-b border-slate-800 gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center text-white shadow-md shadow-indigo-600/30">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div>
-            <h1 className="font-bold text-white text-base leading-tight">SGE Integrado</h1>
-            <p className="text-[10px] text-slate-400 font-medium">Gestão Multinegócios</p>
+        <div className="h-16 flex items-center px-4 border-b border-slate-800 gap-3">
+          <img
+            src="/icon-192.png"
+            alt="CassaraTech ERP"
+            className="w-10 h-10 rounded-xl object-contain bg-slate-950 p-1 border border-slate-800 shadow-md shadow-indigo-600/30 shrink-0"
+          />
+          <div className="min-w-0 flex-1">
+            <h1 className="font-bold text-white text-base leading-tight tracking-tight">ERP Integrado</h1>
+            <p className="text-[10px] text-indigo-400 font-medium truncate">CassaraTech Multinegócios</p>
           </div>
         </div>
 
@@ -114,13 +122,22 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Footer info */}
-        <div className="p-4 border-t border-slate-800/80 text-[11px] text-slate-400">
-          <div className="flex items-center gap-2 mb-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span className="text-slate-300 font-semibold">Argon2id Ativo</span>
+        {/* Footer info & CassaraTech Brand */}
+        <div className="p-3 border-t border-slate-800/80 bg-slate-950/40 space-y-2">
+          <div className="flex items-center justify-between text-[11px] text-slate-400">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className="text-slate-300 font-semibold">Argon2id Ativo</span>
+            </div>
+            <span className="text-[10px] text-slate-500">v2.0 ERP</span>
           </div>
-          <span className="text-slate-400">Ambiente Seguro</span>
+          <div className="pt-1 border-t border-slate-800/60 flex items-center justify-center">
+            <img
+              src="/logo.png"
+              alt="CassaraTech - Soluções Digitais"
+              className="h-7 w-auto object-contain opacity-75 hover:opacity-100 transition-opacity"
+            />
+          </div>
         </div>
       </aside>
     </>

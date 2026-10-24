@@ -13,8 +13,16 @@ export default async function CommissionsPage() {
     include: {
       rule: true,
       partner: true,
+      contract: {
+        include: { customer: true },
+      },
       accountPayable: true,
     },
+    orderBy: { createdAt: "desc" },
+  });
+
+  const contracts = await db.contract.findMany({
+    include: { customer: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -34,7 +42,7 @@ export default async function CommissionsPage() {
             Controle de Comissões
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Regras de apuração, validação antes de pagamento e geração automática de Contas a Pagar sem duplicidades.
+            Regras de apuração vinculadas a contratos, base de cálculo (total ou instalação), edição, exclusão e filtros.
           </p>
         </div>
       </div>
@@ -42,6 +50,7 @@ export default async function CommissionsPage() {
       <CommissionsClientView
         initialRules={rules}
         initialRecords={records}
+        contracts={contracts}
         costCenters={costCenters}
         accounts={accounts}
       />

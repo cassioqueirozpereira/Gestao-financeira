@@ -5,7 +5,7 @@ const SECRET_KEY = new TextEncoder().encode(
   process.env.SESSION_SECRET || "cassara-tech-da-com-carinho-security-token-key-2026-argon2id-prod-secret"
 );
 
-const SESSION_COOKIE_NAME = "sge_session";
+const SESSION_COOKIE_NAME = "erp_session";
 
 // Rotas públicas que não requerem autenticação
 const PUBLIC_PATHS = ["/login", "/orcamento", "/api/auth/login", "/api/orcamento"];

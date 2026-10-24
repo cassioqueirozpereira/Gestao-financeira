@@ -546,3 +546,25 @@ CREATE TABLE IF NOT EXISTS "capital_recoveries" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+
+-- ====================================================
+-- ATUALIZACAO AUTOMATICA: CAMPOS ERP ADICIONAIS
+-- ====================================================
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'PIX';
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS monthly_fee DECIMAL(12,2) DEFAULT 0;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS billing_day INTEGER DEFAULT 10;
+
+ALTER TABLE accounts_payable ADD COLUMN IF NOT EXISTS payment_type TEXT DEFAULT 'BOLETO';
+ALTER TABLE accounts_payable ADD COLUMN IF NOT EXISTS scheduled_date TIMESTAMPTZ;
+ALTER TABLE accounts_payable ADD COLUMN IF NOT EXISTS is_fixed BOOLEAN DEFAULT FALSE;
+
+ALTER TABLE accounts_receivable ADD COLUMN IF NOT EXISTS payment_type TEXT DEFAULT 'PIX';
+
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS payment_method TEXT DEFAULT 'BOLETO';
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS billing_day INTEGER DEFAULT 10;
+ALTER TABLE contracts ADD COLUMN IF NOT EXISTS installation_fee DECIMAL(12,2) DEFAULT 0;
+
+ALTER TABLE commission_records ADD COLUMN IF NOT EXISTS base_type TEXT DEFAULT 'TOTAL';
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS desired_margin DECIMAL(5,2) DEFAULT 30;

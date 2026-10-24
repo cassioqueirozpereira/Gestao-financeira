@@ -1,70 +1,194 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, X, Calendar, DollarSign, Tag, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  Plus,
+  X,
+  Calendar,
+  DollarSign,
+  Tag,
+  CheckCircle2,
+  AlertCircle,
+  Filter,
+  Edit2,
+  CheckSquare,
+  Repeat,
+  CreditCard,
+  Building2,
+  Clock,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface PayablesClientViewProps {
   initialPayables: any[];
   costCenters: any[];
   accounts: any[];
+  bankAccounts: any[];
 }
 
 export function PayablesClientView({
   initialPayables,
   costCenters,
   accounts,
+  bankAccounts,
 }: PayablesClientViewProps) {
   const router = useRouter();
   const [payables, setPayables] = useState(initialPayables);
-  const [showModal, setShowModal] = useState(false);
+
+  // Filtros
+  const [filterType, setFilterType] = useState("TODOS");
+  const [filterStatus, setFilterStatus] = useState("TODOS");
+  const [filterCostCenter, setFilterCostCenter] = useState("TODOS");
+  const [filterOnlyFixed, setFilterOnlyFixed] = useState(false);
+  const [filterPaidDate, setFilterPaidDate] = useState("");
+  const [filterScheduledDate, setFilterScheduledDate] = useState("");
+
+  // Modais
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [settlingItem, setSettlingItem] = useState<any | null>(null);
+  const [editingItem, setEditingItem] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
-  // Form states
-  const [description, setDescription] = useState("");
-  const [costCenterId, setCostCenterId] = useState(costCenters[0]?.id || "");
-  const [chartOfAccountId, setChartOfAccountId] = useState(accounts[0]?.id || "");
-  const [originalAmount, setOriginalAmount] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [competenceDate, setCompetenceDate] = useState(new Date().toISOString().split("T")[0]);
-  const [notes, setNotes] = useState("");
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Form states - Criação
+  const [form, setForm] = useState({
+    description: "",
+    costCenterId: costCenters[0]?.id || "",
+    chartOfAccountId: accounts[0]?.id || "",
+    originalAmount: "",
+    dueDate: "",
+    scheduledDate: "",
+    paymentType: "BOLETO",
+    isFixed: false,
+    competenceDate: new Date().toISOString().split("T")[0],
+    notes: "",
+  });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Form states - Dar Baixa
+  const [settleForm, setSettleForm] = useState({
+    paidAmount: "",
+    paidAt: new Date().toISOString().split("T")[0],
+    bankAccountId: bankAccounts[0]?.id || "",
+    discountAmount: "0",
+    interestAmount: "0",
+  });
+
+  // Form states - Edição
+  const [editForm, setEditForm] = useState({
+    description: "",
+    originalAmount: "",
+    dueDate: "",
+    scheduledDate: "",
+    paymentType: "BOLETO",
+    isFixed: false,
+    costCenterId: "",
+    chartOfAccountId: "",
+    status: "EM_ABERTO",
+    notes: "",
+  });
+
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg(null);
     setLoading(true);
-
+    setFeedback(null);
     try {
       const res = await fetch("/api/contas-pagar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao criar lançamento");
+
+      setShowCreateModal(false);
+      setPayables([data.payable, ...payables]);
+      setFeedback("Conta a pagar lançada com sucesso!");
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenSettle = (p: any) => {
+    setSettlingItem(p);
+    setSettleForm({
+      paidAmount: String(p.originalAmount),
+      paidAt: new Date().toISOString().split("T")[0],
+      bankAccountId: bankAccounts[0]?.id || "",
+      discountAmount: "0",
+      interestAmount: "0",
+    });
+  };
+
+  const handleConfirmSettle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!settlingItem) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/contas-pagar", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          description,
-          costCenterId,
-          chartOfAccountId,
-          originalAmount: parseFloat(originalAmount),
-          dueDate,
-          competenceDate,
-          notes,
+          id: settlingItem.id,
+          action: "settle",
+          ...settleForm,
         }),
       });
-
       const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Erro ao cadastrar");
-      }
+      if (!res.ok) throw new Error(data.error || "Erro ao dar baixa");
 
-      setShowModal(false);
-      setDescription("");
-      setOriginalAmount("");
-      setDueDate("");
-      setNotes("");
+      setPayables(payables.map((item) => (item.id === settlingItem.id ? { ...item, ...data.updated, status: "PAGA" } : item)));
+      setSettlingItem(null);
+      setFeedback("Baixa de pagamento efetuada com sucesso!");
       router.refresh();
-      // Atualiza lista local
-      setPayables([data.payable, ...payables]);
     } catch (err: any) {
-      setErrorMsg(err.message);
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenEdit = (p: any) => {
+    setEditingItem(p);
+    setEditForm({
+      description: p.description,
+      originalAmount: String(p.originalAmount),
+      dueDate: new Date(p.dueDate).toISOString().split("T")[0],
+      scheduledDate: p.scheduledDate ? new Date(p.scheduledDate).toISOString().split("T")[0] : "",
+      paymentType: p.paymentType || "BOLETO",
+      isFixed: Boolean(p.isFixed),
+      costCenterId: p.costCenterId,
+      chartOfAccountId: p.chartOfAccountId,
+      status: p.status,
+      notes: p.notes || "",
+    });
+  };
+
+  const handleConfirmEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/contas-pagar", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingItem.id,
+          action: "edit",
+          ...editForm,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao editar lançamento");
+
+      setPayables(payables.map((item) => (item.id === editingItem.id ? { ...item, ...data.updated } : item)));
+      setEditingItem(null);
+      setFeedback("Lançamento atualizado com sucesso!");
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
     } finally {
       setLoading(false);
     }
@@ -73,161 +197,396 @@ export function PayablesClientView({
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
+  // Aplicação dos filtros
+  const filteredPayables = payables.filter((p) => {
+    if (filterType !== "TODOS" && (p.paymentType || "BOLETO") !== filterType) return false;
+    if (filterStatus !== "TODOS" && p.status !== filterStatus) return false;
+    if (filterCostCenter !== "TODOS" && p.costCenterId !== filterCostCenter) return false;
+    if (filterOnlyFixed && !p.isFixed) return false;
+    if (filterPaidDate) {
+      if (!p.paidAt) return false;
+      const pDate = new Date(p.paidAt).toISOString().split("T")[0];
+      if (pDate !== filterPaidDate) return false;
+    }
+    if (filterScheduledDate) {
+      if (!p.scheduledDate) return false;
+      const sDate = new Date(p.scheduledDate).toISOString().split("T")[0];
+      if (sDate !== filterScheduledDate) return false;
+    }
+    return true;
+  });
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-end">
+    <div className="space-y-5">
+      {/* Top Action */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            Total listado: {filteredPayables.length} contas
+          </span>
+        </div>
         <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
         >
           <Plus className="w-4 h-4" />
           Novo Lançamento a Pagar
         </button>
       </div>
 
-      {/* Modal de Cadastro */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
-            <button
-              onClick={() => setShowModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+      {feedback && (
+        <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-300 rounded-xl text-xs flex justify-between items-center">
+          <span>{feedback}</span>
+          <button onClick={() => setFeedback(null)} className="font-bold uppercase">Fechar</button>
+        </div>
+      )}
+
+      {/* Painel de Filtros Avançados */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+          <Filter className="w-3.5 h-3.5 text-indigo-500" />
+          <span>Filtros do Contas a Pagar</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Tipo de Pagamento
+            </label>
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
             >
-              <X className="w-5 h-5" />
-            </button>
+              <option value="TODOS">Todos os Tipos</option>
+              <option value="PIX">PIX</option>
+              <option value="BOLETO">Boleto</option>
+              <option value="CARTAO">Cartão de Crédito</option>
+              <option value="TRANSFERENCIA">Transferência</option>
+              <option value="DINHEIRO">Dinheiro</option>
+            </select>
+          </div>
 
-            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-4">
-              Cadastrar Conta a Pagar
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Status da Conta
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            >
+              <option value="TODOS">Todos os Status</option>
+              <option value="EM_ABERTO">Em Aberto</option>
+              <option value="A_VENCER">A Vencer</option>
+              <option value="VENCIDA">Vencida</option>
+              <option value="PAGA">Paga</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Data de Pagamento (Baixa)
+            </label>
+            <input
+              type="date"
+              value={filterPaidDate}
+              onChange={(e) => setFilterPaidDate(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Data da Programação
+            </label>
+            <input
+              type="date"
+              value={filterScheduledDate}
+              onChange={(e) => setFilterScheduledDate(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            />
+          </div>
+
+          <div className="flex items-end">
+            <label className="flex items-center gap-2 cursor-pointer bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 w-full">
+              <input
+                type="checkbox"
+                checked={filterOnlyFixed}
+                onChange={(e) => setFilterOnlyFixed(e.target.checked)}
+                className="rounded text-indigo-600"
+              />
+              <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1">
+                <Repeat className="w-3 h-3 text-indigo-400" />
+                Pgto Fixo / Recorrente
+              </span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      {/* Tabela de Contas */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs sm:text-sm">
+            <thead className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
+              <tr>
+                <th className="px-4 py-3.5">Descrição</th>
+                <th className="px-4 py-3.5">Centro & Categoria</th>
+                <th className="px-4 py-3.5">Tipo & Programação</th>
+                <th className="px-4 py-3.5">Vencimento</th>
+                <th className="px-4 py-3.5">Valor (R$)</th>
+                <th className="px-4 py-3.5">Status</th>
+                <th className="px-4 py-3.5 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {filteredPayables.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-10 text-slate-400">
+                    Nenhum lançamento a pagar encontrado com os filtros selecionados.
+                  </td>
+                </tr>
+              ) : (
+                filteredPayables.map((p) => {
+                  const isPaid = p.status === "PAGA";
+                  const dueDate = new Date(p.dueDate);
+                  const isOverdue = !isPaid && dueDate < new Date();
+
+                  return (
+                    <tr
+                      key={p.id}
+                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      <td className="px-4 py-3.5">
+                        <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                          {p.description}
+                          {p.isFixed && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300">
+                              Fixo
+                            </span>
+                          )}
+                        </div>
+                        {p.notes && <p className="text-[11px] text-slate-400 mt-0.5">{p.notes}</p>}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <div className="text-slate-800 dark:text-slate-200 font-medium text-xs">
+                          {p.costCenter?.name || "Geral"}
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          {p.chartOfAccount?.name || "Sem categoria"}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3.5 text-xs">
+                        <span className="font-semibold px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                          {p.paymentType || "BOLETO"}
+                        </span>
+                        {p.scheduledDate && (
+                          <div className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1 flex items-center gap-1">
+                            <Clock className="w-2.5 h-2.5" />
+                            Prog: {new Date(p.scheduledDate).toLocaleDateString("pt-BR")}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <div className={isOverdue ? "text-red-500 font-bold" : "text-slate-600 dark:text-slate-300"}>
+                          {dueDate.toLocaleDateString("pt-BR")}
+                        </div>
+                        {p.paidAt && (
+                          <div className="text-[10px] text-emerald-500 font-medium">
+                            Pago em: {new Date(p.paidAt).toLocaleDateString("pt-BR")}
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3.5 font-extrabold text-slate-900 dark:text-white">
+                        {formatBRL(Number(p.originalAmount))}
+                      </td>
+
+                      <td className="px-4 py-3.5">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            isPaid
+                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                              : isOverdue
+                              ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                          }`}
+                        >
+                          {p.status}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3.5 text-right space-x-2">
+                        {!isPaid && (
+                          <button
+                            onClick={() => handleOpenSettle(p)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+                            title="Dar Baixa de Pagamento"
+                          >
+                            <CheckSquare className="w-3.5 h-3.5" />
+                            <span>Baixar</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleOpenEdit(p)}
+                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+                          title="Editar lançamento efetuado"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                          <span>Editar</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Modal - Novo Lançamento */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
+              Lançar Nova Conta a Pagar
             </h3>
-
-            {errorMsg && (
-              <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 rounded-xl text-xs flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span>{errorMsg}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs">
+            <form onSubmit={handleCreate} className="space-y-4 text-xs sm:text-sm">
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Descrição da Conta / Despesa
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Descrição da Conta *
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ex: Cera de coco 5kg, Domínio CassaraTech, Luz da Casa..."
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  placeholder="Ex: Fornecedor de Cera de Soja"
                 />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Centro de Custo
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Centro de Custo *
                   </label>
                   <select
-                    value={costCenterId}
-                    onChange={(e) => setCostCenterId(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={form.costCenterId}
+                    onChange={(e) => setForm({ ...form, costCenterId: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
                   >
                     {costCenters.map((cc) => (
-                      <option key={cc.id} value={cc.id}>
-                        {cc.name}
-                      </option>
+                      <option key={cc.id} value={cc.id}>{cc.name}</option>
                     ))}
                   </select>
                 </div>
-
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Categoria (Plano de Contas)
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Categoria *
                   </label>
                   <select
-                    value={chartOfAccountId}
-                    onChange={(e) => setChartOfAccountId(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={form.chartOfAccountId}
+                    onChange={(e) => setForm({ ...form, chartOfAccountId: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
                   >
                     {accounts.map((acc) => (
-                      <option key={acc.id} value={acc.id}>
-                        {acc.code} - {acc.name}
-                      </option>
+                      <option key={acc.id} value={acc.id}>{acc.name}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Valor (R$)
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Valor (R$) *
                   </label>
                   <input
                     type="number"
                     step="0.01"
                     required
-                    placeholder="0,00"
-                    value={originalAmount}
-                    onChange={(e) => setOriginalAmount(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={form.originalAmount}
+                    onChange={(e) => setForm({ ...form, originalAmount: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
                   />
                 </div>
-
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Data de Vencimento
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Vencimento *
                   </label>
                   <input
                     type="date"
                     required
-                    value={dueDate}
-                    onChange={(e) => setDueDate(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={form.dueDate}
+                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
                   />
                 </div>
-
                 <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Competência
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Programado Para
                   </label>
                   <input
                     type="date"
-                    required
-                    value={competenceDate}
-                    onChange={(e) => setCompetenceDate(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    value={form.scheduledDate}
+                    onChange={(e) => setForm({ ...form, scheduledDate: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
                   />
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Observações adicionais (opcional)
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Número de nota fiscal, link de boleto ou condições..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3.5 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                />
+              <div className="grid grid-cols-2 gap-3 items-center">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Tipo de Pagamento
+                  </label>
+                  <select
+                    value={form.paymentType}
+                    onChange={(e) => setForm({ ...form, paymentType: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                  >
+                    <option value="BOLETO">Boleto Bancário</option>
+                    <option value="PIX">PIX</option>
+                    <option value="CARTAO">Cartão de Crédito</option>
+                    <option value="TRANSFERENCIA">Transferência</option>
+                    <option value="DINHEIRO">Dinheiro</option>
+                  </select>
+                </div>
+                <div className="pt-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={form.isFixed}
+                      onChange={(e) => setForm({ ...form, isFixed: e.target.checked })}
+                      className="rounded text-indigo-600"
+                    />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Pagamento Fixo / Recorrente
+                    </span>
+                  </label>
+                </div>
               </div>
 
-              <div className="pt-2 flex justify-end gap-2">
+              <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border border-slate-300 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold transition disabled:opacity-50"
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md"
                 >
-                  {loading ? "Salvando..." : "Salvar Lançamento"}
+                  Salvar Lançamento
                 </button>
               </div>
             </form>
@@ -235,55 +594,194 @@ export function PayablesClientView({
         </div>
       )}
 
-      {/* Tabela de Contas */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-        {payables.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 text-sm">
-            Nenhuma conta a pagar cadastrada. Clique em "Novo Lançamento a Pagar" para registrar.
+      {/* Modal - Dar Baixa */}
+      {settlingItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-2">
+              Dar Baixa de Pagamento
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              {settlingItem.description} — Vencimento: {new Date(settlingItem.dueDate).toLocaleDateString("pt-BR")}
+            </p>
+
+            <form onSubmit={handleConfirmSettle} className="space-y-4 text-xs sm:text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Valor Efetivamente Pago (R$) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={settleForm.paidAmount}
+                  onChange={(e) => setSettleForm({ ...settleForm, paidAmount: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Data do Pagamento *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={settleForm.paidAt}
+                    onChange={(e) => setSettleForm({ ...settleForm, paidAt: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Conta Bancária de Saída
+                  </label>
+                  <select
+                    value={settleForm.bankAccountId}
+                    onChange={(e) => setSettleForm({ ...settleForm, bankAccountId: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  >
+                    {bankAccounts.map((b) => (
+                      <option key={b.id} value={b.id}>{b.bankName} - {b.accountNumber}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setSettlingItem(null)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md"
+                >
+                  Confirmar Baixa
+                </button>
+              </div>
+            </form>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 uppercase font-semibold border-b border-slate-200 dark:border-slate-800">
-                <tr>
-                  <th className="py-3 px-4">Descrição</th>
-                  <th className="py-3 px-4">Centro de Custo</th>
-                  <th className="py-3 px-4">Categoria</th>
-                  <th className="py-3 px-4">Vencimento</th>
-                  <th className="py-3 px-4">Valor</th>
-                  <th className="py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                {payables.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition">
-                    <td className="py-3 px-4 font-semibold text-slate-900 dark:text-white">
-                      {p.description}
-                    </td>
-                    <td className="py-3 px-4 text-slate-600 dark:text-slate-300">
-                      {p.costCenter?.name || "-"}
-                    </td>
-                    <td className="py-3 px-4 text-slate-500">
-                      {p.chartOfAccount?.name || "-"}
-                    </td>
-                    <td className="py-3 px-4 font-mono text-slate-600 dark:text-slate-400">
-                      {new Date(p.dueDate).toLocaleDateString("pt-BR")}
-                    </td>
-                    <td className="py-3 px-4 font-bold text-slate-900 dark:text-white">
-                      {formatBRL(Number(p.originalAmount))}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-400">
-                        {p.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        </div>
+      )}
+
+      {/* Modal - Editar Lançamento */}
+      {editingItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
+              Editar Lançamento Efetuado
+            </h3>
+            <form onSubmit={handleConfirmEdit} className="space-y-4 text-xs sm:text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Descrição
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Valor Original (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editForm.originalAmount}
+                    onChange={(e) => setEditForm({ ...editForm, originalAmount: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Vencimento
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={editForm.dueDate}
+                    onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Data Programada
+                  </label>
+                  <input
+                    type="date"
+                    value={editForm.scheduledDate}
+                    onChange={(e) => setEditForm({ ...editForm, scheduledDate: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Tipo de Pagamento
+                  </label>
+                  <select
+                    value={editForm.paymentType}
+                    onChange={(e) => setEditForm({ ...editForm, paymentType: e.target.value })}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                  >
+                    <option value="BOLETO">Boleto Bancário</option>
+                    <option value="PIX">PIX</option>
+                    <option value="CARTAO">Cartão de Crédito</option>
+                    <option value="TRANSFERENCIA">Transferência</option>
+                    <option value="DINHEIRO">Dinheiro</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="editIsFixed"
+                  checked={editForm.isFixed}
+                  onChange={(e) => setEditForm({ ...editForm, isFixed: e.target.checked })}
+                  className="rounded text-indigo-600"
+                />
+                <label htmlFor="editIsFixed" className="text-xs font-semibold text-slate-700 dark:text-slate-300 cursor-pointer">
+                  Marcar como Pagamento Fixo / Recorrente
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md"
+                >
+                  Salvar Alterações
+                </button>
+              </div>
+            </form>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
