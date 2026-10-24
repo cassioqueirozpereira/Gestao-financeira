@@ -9,6 +9,10 @@ const orcamentoSchema = z.object({
   phone: z.string().min(8, "Telefone / WhatsApp obrigatório"),
   interestedIn: z.enum(["Sistemas", "Velas", "Resinas", "Mídia Social"]),
   notes: z.string().min(5, "Detalhes da solicitação obrigatórios"),
+  utmSource: z.string().optional(),
+  utmMedium: z.string().optional(),
+  utmCampaign: z.string().optional(),
+  referrer: z.string().optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -23,7 +27,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, phone, interestedIn, notes } = parsed.data;
+    const {
+      name,
+      email,
+      phone,
+      interestedIn,
+      notes,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      referrer,
+    } = parsed.data;
+
+    const trackingInfo = [
+      utmSource ? `Origem: ${utmSource}` : null,
+      utmMedium ? `Canal: ${utmMedium}` : null,
+      utmCampaign ? `Campanha: ${utmCampaign}` : null,
+      referrer ? `Referência: ${referrer}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
+    const finalNotes = trackingInfo
+      ? `${notes}\n[Rastreamento: ${trackingInfo}]`
+      : notes;
 
     // Busca se cliente já existe por telefone ou e-mail para não duplicar
     let customer = await db.customer.findFirst({
@@ -36,17 +63,15 @@ export async function POST(req: NextRequest) {
     });
 
     if (customer) {
-      // Atualiza notas e interesse
       customer = await db.customer.update({
         where: { id: customer.id },
         data: {
           interestedIn,
           status: "NOVO_CONTATO",
-          notes: `${customer.notes ? customer.notes + "\n---\n" : ""}Novo orçamento solicitado em ${new Date().toLocaleDateString("pt-BR")}: ${notes}`,
+          notes: `${customer.notes ? customer.notes + "\n---\n" : ""}Novo orçamento solicitado em ${new Date().toLocaleDateString("pt-BR")}: ${finalNotes}`,
         },
       });
     } else {
-      // Cria novo lead no CRM
       customer = await db.customer.create({
         data: {
           name,
@@ -54,7 +79,7 @@ export async function POST(req: NextRequest) {
           phone,
           interestedIn,
           status: "NOVO_CONTATO",
-          notes: `Orçamento inicial: ${notes}`,
+          notes: finalNotes,
         },
       });
     }
