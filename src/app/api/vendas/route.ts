@@ -90,28 +90,68 @@ export async function POST(req: NextRequest) {
     });
 
     const totalAmount = Math.max(0, subtotal - (parseFloat(discountAmount) || 0));
-    const orderCount = await db.order.count();
-    const orderNumber = `VDA-${new Date().getFullYear()}-${String(orderCount + 1).padStart(4, "0")}`;
 
-    // 1. Cria a Venda / Order
-    const order = await db.order.create({
-      data: {
-        orderNumber,
-        customerId: targetCustomerId,
-        totalAmount,
-        discountAmount: parseFloat(discountAmount) || 0,
-        channel,
-        status: "CONCLUIDO",
-        createdAt: new Date(saleDate),
-        items: {
-          create: validatedItems,
-        },
+    // Determina o próximo número sequencial de venda de forma segura
+    const year = new Date().getFullYear();
+    const latestOrder = await db.order.findFirst({
+      where: {
+        orderNumber: { startsWith: `VDA-${year}-` },
       },
-      include: {
-        items: { include: { product: true } },
-        customer: true,
-      },
+      orderBy: { createdAt: "desc" },
+      select: { orderNumber: true },
     });
+
+    let nextSeq = 1;
+    if (latestOrder?.orderNumber) {
+      const parts = latestOrder.orderNumber.split("-");
+      const lastSeq = parseInt(parts[2], 10);
+      if (!isNaN(lastSeq)) {
+        nextSeq = lastSeq + 1;
+      }
+    } else {
+      const count = await db.order.count();
+      nextSeq = count + 1;
+    }
+
+    // 1. Cria a Venda / Order com tentativa de desempate em caso de concorrência
+    let order: any = null;
+    let finalOrderNumber = "";
+    let attempts = 0;
+
+    while (!order && attempts < 5) {
+      finalOrderNumber = `VDA-${year}-${String(nextSeq + attempts).padStart(4, "0")}`;
+      try {
+        order = await db.order.create({
+          data: {
+            orderNumber: finalOrderNumber,
+            customerId: targetCustomerId,
+            totalAmount,
+            discountAmount: parseFloat(discountAmount) || 0,
+            channel,
+            status: "CONCLUIDO",
+            createdAt: new Date(saleDate),
+            items: {
+              create: validatedItems,
+            },
+          },
+          include: {
+            items: { include: { product: true } },
+            customer: true,
+          },
+        });
+      } catch (err: any) {
+        // Se der conflito de chave única (P2002) no orderNumber por clique simultâneo, tenta o próximo número
+        if (err.code === "P2002" && JSON.stringify(err.meta || "").includes("orderNumber")) {
+          attempts++;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!order) {
+      throw new Error("Não foi possível gerar um número único de pedido. Tente novamente.");
+    }
 
     // 2. Dá baixa no estoque de cada produto
     for (const it of validatedItems) {
@@ -155,9 +195,9 @@ export async function POST(req: NextRequest) {
       action: "CREATE",
       entity: "Order",
       entityId: order.id,
-      newValues: { orderNumber, totalAmount, receivableId: receivable.id },
+      newValues: { orderNumber: order.orderNumber, totalAmount, receivableId: receivable.id },
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-      description: `Venda ${orderNumber} de R$ ${totalAmount} com emissão de título a vencer para ${order.customer.name}`,
+      description: `Venda ${order.orderNumber} de R$ ${totalAmount} com emissão de título a vencer para ${order.customer.name}`,
     });
 
     return NextResponse.json({ success: true, order, receivable });

@@ -56,6 +56,7 @@ export default function ClientesPage() {
   });
 
   const [generatingId, setGeneratingId] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const fetchCustomers = async () => {
@@ -111,6 +112,8 @@ export default function ClientesPage() {
 
   const handleSaveCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSaving) return;
+    setIsSaving(true);
     try {
       const url = "/api/clientes";
       const method = editingCustomer ? "PUT" : "POST";
@@ -132,6 +135,8 @@ export default function ClientesPage() {
       fetchCustomers();
     } catch (err: any) {
       setFeedbackMsg({ type: "error", text: err.message });
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -553,16 +558,18 @@ export default function ClientesPage() {
               <div className="flex justify-end gap-3 pt-3">
                 <button
                   type="button"
+                  disabled={isSaving}
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-300 disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30"
+                  disabled={isSaving}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/30 disabled:opacity-50 flex items-center gap-2"
                 >
-                  Salvar Cliente
+                  {isSaving ? "Salvando..." : "Salvar Cliente"}
                 </button>
               </div>
             </form>

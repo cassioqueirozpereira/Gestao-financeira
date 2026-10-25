@@ -35,6 +35,7 @@ export default function VendasPage() {
   // Itens da Venda
   const [items, setItems] = useState<{ productId: string; quantity: number; unitPrice: number }[]>([]);
   const [selectedProductId, setSelectedProductId] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -107,6 +108,9 @@ export default function VendasPage() {
       return;
     }
 
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+
     try {
       const res = await fetch("/api/vendas", {
         method: "POST",
@@ -135,6 +139,8 @@ export default function VendasPage() {
       fetchData();
     } catch (err: any) {
       alert(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -522,17 +528,18 @@ export default function VendasPage() {
               <div className="flex justify-end gap-3 pt-2">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold disabled:opacity-50"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  disabled={items.length === 0}
-                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md disabled:opacity-50"
+                  disabled={items.length === 0 || isSubmitting}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md disabled:opacity-50 flex items-center gap-2"
                 >
-                  Concluir Venda & Emitir Título
+                  {isSubmitting ? "Registrando Venda..." : "Concluir Venda & Emitir Título"}
                 </button>
               </div>
             </form>
