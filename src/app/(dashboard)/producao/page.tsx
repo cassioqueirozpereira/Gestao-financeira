@@ -6,9 +6,14 @@ import { ProductionClientView } from "./ProductionClientView";
 export const dynamic = "force-dynamic";
 
 export default async function ProductionPage() {
-  const productionOrders = await db.productionOrder.findMany({
-    orderBy: { productionDate: "desc" },
-  });
+  let productionOrders: any[] = [];
+  try {
+    productionOrders = await db.productionOrder.findMany({
+      orderBy: { productionDate: "desc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar ordens de produção:", e);
+  }
 
   return (
     <div className="space-y-6">

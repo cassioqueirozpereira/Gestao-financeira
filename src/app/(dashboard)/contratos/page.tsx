@@ -4,22 +4,38 @@ import { FileText, Plus, ShieldCheck, Download, CheckCircle2 } from "lucide-reac
 import { ContractsClientView } from "./ContractsClientView";
 
 export default async function ContractsPage() {
-  const contracts = await db.contract.findMany({
-    include: {
-      company: true,
-      customer: true,
-      receivables: {
-        orderBy: { dueDate: "asc" },
+  let contracts: any[] = [];
+  let companies: any[] = [];
+  let customers: any[] = [];
+
+  try {
+    contracts = await db.contract.findMany({
+      include: {
+        company: true,
+        customer: true,
+        receivables: {
+          orderBy: { dueDate: "asc" },
+        },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar contratos:", e);
+  }
 
-  const companies = await db.company.findMany({
-    where: { isPersonal: false },
-  });
+  try {
+    companies = await db.company.findMany({
+      where: { isPersonal: false },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar empresas:", e);
+  }
 
-  const customers = await db.customer.findMany();
+  try {
+    customers = await db.customer.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar clientes:", e);
+  }
 
   return (
     <div className="space-y-6">

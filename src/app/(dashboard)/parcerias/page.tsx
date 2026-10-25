@@ -4,16 +4,27 @@ import { Handshake, Plus, Users, DollarSign, Tag } from "lucide-react";
 import { PartnersClientView } from "./PartnersClientView";
 
 export default async function PartnersPage() {
-  const partners = await db.partner.findMany({
-    include: {
-      costCenter: true,
-      customers: true,
-      commissions: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  let partners: any[] = [];
+  let costCenters: any[] = [];
 
-  const costCenters = await db.costCenter.findMany();
+  try {
+    partners = await db.partner.findMany({
+      include: {
+        costCenter: true,
+        customers: true,
+        commissions: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar parceiros:", e);
+  }
+
+  try {
+    costCenters = await db.costCenter.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar centros de custo:", e);
+  }
 
   return (
     <div className="space-y-6">

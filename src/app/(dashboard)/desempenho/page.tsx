@@ -16,32 +16,49 @@ import {
 } from "lucide-react";
 
 interface PerformancePageProps {
-  searchParams: { centro?: string };
+  searchParams?: { centro?: string };
 }
 
 export default async function PerformanceDashboardPage({ searchParams }: PerformancePageProps) {
-  const selectedCostCenterCode = searchParams.centro || "TODOS";
+  const params = await Promise.resolve(searchParams);
+  const selectedCostCenterCode = params?.centro || "TODOS";
 
   let costCenterFilterId: string | undefined = undefined;
   let costCenterName = "Visão Consolidada de Todos os Negócios";
 
   if (selectedCostCenterCode !== "TODOS") {
-    const cc = await db.costCenter.findUnique({
-      where: { code: selectedCostCenterCode },
-    });
-    if (cc) {
-      costCenterFilterId = cc.id;
-      costCenterName = cc.name;
+    try {
+      const cc = await db.costCenter.findUnique({
+        where: { code: selectedCostCenterCode },
+      });
+      if (cc) {
+        costCenterFilterId = cc.id;
+        costCenterName = cc.name;
+      }
+    } catch (e) {
+      console.error("Erro ao carregar centro de custo:", e);
     }
   }
 
   // 1. Apuração de Receitas e Despesas
-  const payables = await db.accountPayable.findMany({
-    where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-  });
-  const receivables = await db.accountReceivable.findMany({
-    where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-  });
+  let payables: any[] = [];
+  let receivables: any[] = [];
+
+  try {
+    payables = await db.accountPayable.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+    });
+  } catch (e) {
+    console.error("Erro ao carregar contas a pagar no desempenho:", e);
+  }
+
+  try {
+    receivables = await db.accountReceivable.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+    });
+  } catch (e) {
+    console.error("Erro ao carregar contas a receber no desempenho:", e);
+  }
 
   const totalReceivablePrevisto = receivables.reduce((s, r) => s + Number(r.originalAmount), 0);
   const totalRecebidoRealizado = receivables
@@ -74,18 +91,33 @@ export default async function PerformanceDashboardPage({ searchParams }: Perform
   ).length;
   const taxaConversao = leadsCount > 0 ? (convertedCount / leadsCount) * 100 : null;
 
-  const orders = await db.order.findMany();
-  const totalVendasValor = orders.reduce((s, o) => s + Number(o.totalAmount), 0);
+  let orders: any[] = [];
+  try {
+    orders = await db.order.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar pedidos no desempenho:", e);
+  }
+  const totalVendasValor = orders.reduce((s, o) => s + Number(o.totalAmount || 0), 0);
   const ticketMedio = orders.length > 0 ? totalVendasValor / orders.length : null;
 
   // 3. Apuração Mídia Social
-  const mediaExpenses = await db.mediaExpense.findMany({
-    where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-  });
-  const totalInvestimentoMidia = mediaExpenses.reduce((s, m) => s + Number(m.spentAmount), 0);
+  let mediaExpenses: any[] = [];
+  try {
+    mediaExpenses = await db.mediaExpense.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+    });
+  } catch (e) {
+    console.error("Erro ao carregar despesas de mídia no desempenho:", e);
+  }
+  const totalInvestimentoMidia = mediaExpenses.reduce((s, m) => s + Number(m.spentAmount || 0), 0);
 
   // Capital D.A.
-  const capital = await db.capitalRecovery.findFirst();
+  let capital: any = null;
+  try {
+    capital = await db.capitalRecovery.findFirst();
+  } catch (e) {
+    console.error("Erro ao carregar capital no desempenho:", e);
+  }
   const capInvestido = Number(capital?.initialCapital || 1600);
   const capRecuperado = Number(capital?.recoveredAmount || 0);
 

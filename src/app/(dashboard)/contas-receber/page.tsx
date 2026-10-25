@@ -6,21 +6,44 @@ import { ReceivablesClientView } from "./ReceivablesClientView";
 export const dynamic = "force-dynamic";
 
 export default async function AccountsReceivablePage() {
-  const receivables = await db.accountReceivable.findMany({
-    include: {
-      costCenter: true,
-      chartOfAccount: true,
-      customer: true,
-      bankAccount: true,
-    },
-    orderBy: { dueDate: "asc" },
-  });
+  let receivables: any[] = [];
+  let costCenters: any[] = [];
+  let customers: any[] = [];
+  let accounts: any[] = [];
 
-  const costCenters = await db.costCenter.findMany();
-  const customers = await db.customer.findMany();
-  const accounts = await db.chartOfAccount.findMany({
-    where: { type: "RECEITA_OPERACIONAL" },
-  });
+  try {
+    receivables = await db.accountReceivable.findMany({
+      include: {
+        costCenter: true,
+        chartOfAccount: true,
+        customer: true,
+        bankAccount: true,
+      },
+      orderBy: { dueDate: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar contas a receber:", e);
+  }
+
+  try {
+    costCenters = await db.costCenter.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar centros de custo:", e);
+  }
+
+  try {
+    customers = await db.customer.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar clientes:", e);
+  }
+
+  try {
+    accounts = await db.chartOfAccount.findMany({
+      where: { type: "RECEITA_OPERACIONAL" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar plano de contas:", e);
+  }
 
   return (
     <div className="space-y-6">

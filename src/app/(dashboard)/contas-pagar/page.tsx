@@ -4,31 +4,54 @@ import { ArrowDownCircle } from "lucide-react";
 import { PayablesClientView } from "./PayablesClientView";
 
 export default async function AccountsPayablePage() {
-  const payables = await db.accountPayable.findMany({
-    include: {
-      costCenter: true,
-      chartOfAccount: true,
-      supplier: true,
-      bankAccount: true,
-    },
-    orderBy: { dueDate: "asc" },
-  });
+  let payables: any[] = [];
+  let costCenters: any[] = [];
+  let bankAccounts: any[] = [];
+  let accounts: any[] = [];
 
-  const costCenters = await db.costCenter.findMany();
-  const bankAccounts = await db.bankAccount.findMany();
-  const accounts = await db.chartOfAccount.findMany({
-    where: {
-      type: {
-        in: [
-          "CUSTO_DIRETO",
-          "CUSTO_INDIRETO",
-          "DESPESA_ADMINISTRATIVA",
-          "DESPESA_COMERCIAL_MARKETING",
-          "INVESTIMENTO_ATIVO",
-        ],
+  try {
+    payables = await db.accountPayable.findMany({
+      include: {
+        costCenter: true,
+        chartOfAccount: true,
+        supplier: true,
+        bankAccount: true,
       },
-    },
-  });
+      orderBy: { dueDate: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar contas a pagar:", e);
+  }
+
+  try {
+    costCenters = await db.costCenter.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar centros de custo:", e);
+  }
+
+  try {
+    bankAccounts = await db.bankAccount.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar contas bancárias:", e);
+  }
+
+  try {
+    accounts = await db.chartOfAccount.findMany({
+      where: {
+        type: {
+          in: [
+            "CUSTO_DIRETO",
+            "CUSTO_INDIRETO",
+            "DESPESA_ADMINISTRATIVA",
+            "DESPESA_COMERCIAL_MARKETING",
+            "INVESTIMENTO_ATIVO",
+          ],
+        },
+      },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar plano de contas:", e);
+  }
 
   return (
     <div className="space-y-6">

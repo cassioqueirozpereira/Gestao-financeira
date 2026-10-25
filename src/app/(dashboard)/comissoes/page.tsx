@@ -4,34 +4,61 @@ import { Percent, Plus, ShieldCheck, CheckCircle2, ArrowRight } from "lucide-rea
 import { CommissionsClientView } from "./CommissionsClientView";
 
 export default async function CommissionsPage() {
-  const rules = await db.commissionRule.findMany({
-    include: { costCenter: true },
-    orderBy: { createdAt: "desc" },
-  });
+  let rules: any[] = [];
+  let records: any[] = [];
+  let contracts: any[] = [];
+  let costCenters: any[] = [];
+  let accounts: any[] = [];
 
-  const records = await db.commissionRecord.findMany({
-    include: {
-      rule: true,
-      partner: true,
-      contract: {
-        include: { customer: true },
+  try {
+    rules = await db.commissionRule.findMany({
+      include: { costCenter: true },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar regras de comissão:", e);
+  }
+
+  try {
+    records = await db.commissionRecord.findMany({
+      include: {
+        rule: true,
+        partner: true,
+        contract: {
+          include: { customer: true },
+        },
+        accountPayable: true,
       },
-      accountPayable: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar registros de comissão:", e);
+  }
 
-  const contracts = await db.contract.findMany({
-    include: { customer: true },
-    orderBy: { createdAt: "desc" },
-  });
+  try {
+    contracts = await db.contract.findMany({
+      include: { customer: true },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar contratos:", e);
+  }
 
-  const costCenters = await db.costCenter.findMany();
-  const accounts = await db.chartOfAccount.findMany({
-    where: {
-      type: { in: ["DESPESA_COMERCIAL_MARKETING", "CUSTO_DIRETO", "DESPESA_ADMINISTRATIVA"] },
-    },
-  });
+  try {
+    costCenters = await db.costCenter.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar centros de custo:", e);
+  }
+
+  try {
+    accounts = await db.chartOfAccount.findMany({
+      where: {
+        type: { in: ["DESPESA_COMERCIAL_MARKETING", "CUSTO_DIRETO", "DESPESA_ADMINISTRATIVA"] },
+      },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar plano de contas:", e);
+  }
 
   return (
     <div className="space-y-6">

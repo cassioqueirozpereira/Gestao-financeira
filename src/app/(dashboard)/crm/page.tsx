@@ -6,13 +6,18 @@ import { CrmClientView } from "./CrmClientView";
 export const dynamic = "force-dynamic";
 
 export default async function CrmPage() {
-  const customers = await db.customer.findMany({
-    include: {
-      partner: true,
-      contracts: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  let customers: any[] = [];
+  try {
+    customers = await db.customer.findMany({
+      include: {
+        partner: true,
+        contracts: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar clientes do CRM:", e);
+  }
 
   return (
     <div className="space-y-6">

@@ -6,9 +6,14 @@ import { CatalogClientView } from "./CatalogClientView";
 export const dynamic = "force-dynamic";
 
 export default async function CatalogPage() {
-  const products = await db.product.findMany({
-    orderBy: [{ category: "asc" }, { basePrice: "asc" }],
-  });
+  let products: any[] = [];
+  try {
+    products = await db.product.findMany({
+      orderBy: [{ category: "asc" }, { basePrice: "asc" }],
+    });
+  } catch (e) {
+    console.error("Erro ao carregar catálogo de produtos:", e);
+  }
 
   const categoryLabels: Record<string, string> = {
     VELAS_NORMAIS_COLORIDAS: "14.1. Velas Normais e Coloridas",

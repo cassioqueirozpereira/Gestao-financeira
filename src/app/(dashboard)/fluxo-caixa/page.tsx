@@ -5,42 +5,62 @@ import { Wallet, ArrowUpCircle, ArrowDownCircle, RefreshCw, Calendar, TrendingUp
 export const dynamic = "force-dynamic";
 
 interface CashFlowProps {
-  searchParams: { centro?: string };
+  searchParams?: { centro?: string };
 }
 
 export default async function CashFlowPage({ searchParams }: CashFlowProps) {
-  const selectedCostCenterCode = searchParams.centro || "TODOS";
+  const params = await Promise.resolve(searchParams);
+  const selectedCostCenterCode = params?.centro || "TODOS";
 
   let costCenterFilterId: string | undefined = undefined;
   if (selectedCostCenterCode !== "TODOS") {
-    const cc = await db.costCenter.findUnique({ where: { code: selectedCostCenterCode } });
-    if (cc) costCenterFilterId = cc.id;
+    try {
+      const cc = await db.costCenter.findUnique({ where: { code: selectedCostCenterCode } });
+      if (cc) costCenterFilterId = cc.id;
+    } catch (e) {
+      console.error("Erro ao carregar centro de custo:", e);
+    }
   }
 
   // 1. Contas Bancárias
-  const bankAccounts = await db.bankAccount.findMany();
-  const saldoInicialConsolidado = bankAccounts.reduce((s, a) => s + Number(a.initialBalance), 0);
-  const saldoAtualConsolidado = bankAccounts.reduce((s, a) => s + Number(a.currentBalance), 0);
+  let bankAccounts: any[] = [];
+  try {
+    bankAccounts = await db.bankAccount.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar contas bancárias no fluxo de caixa:", e);
+  }
+  const saldoInicialConsolidado = bankAccounts.reduce((s, a) => s + Number(a.initialBalance || 0), 0);
+  const saldoAtualConsolidado = bankAccounts.reduce((s, a) => s + Number(a.currentBalance || 0), 0);
 
   // 2. Recebíveis (Entradas)
-  const receivables = await db.accountReceivable.findMany({
-    where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-    orderBy: { dueDate: "asc" },
-  });
-  const entradasPrevistas = receivables.reduce((s, r) => s + Number(r.originalAmount), 0);
+  let receivables: any[] = [];
+  try {
+    receivables = await db.accountReceivable.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+      orderBy: { dueDate: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar contas a receber no fluxo de caixa:", e);
+  }
+  const entradasPrevistas = receivables.reduce((s, r) => s + Number(r.originalAmount || 0), 0);
   const entradasRealizadas = receivables
     .filter((r) => r.status === "RECEBIDA")
-    .reduce((s, r) => s + Number(r.receivedAmount), 0);
+    .reduce((s, r) => s + Number(r.receivedAmount || 0), 0);
 
   // 3. Pagáveis (Saídas)
-  const payables = await db.accountPayable.findMany({
-    where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-    orderBy: { dueDate: "asc" },
-  });
-  const saidasPrevistas = payables.reduce((s, p) => s + Number(p.originalAmount), 0);
+  let payables: any[] = [];
+  try {
+    payables = await db.accountPayable.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+      orderBy: { dueDate: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar contas a pagar no fluxo de caixa:", e);
+  }
+  const saidasPrevistas = payables.reduce((s, p) => s + Number(p.originalAmount || 0), 0);
   const saidasRealizadas = payables
     .filter((p) => p.status === "PAGA")
-    .reduce((s, p) => s + Number(p.paidAmount), 0);
+    .reduce((s, p) => s + Number(p.paidAmount || 0), 0);
 
   // 4. Balanços
   const saldoFinalPrevisto = saldoInicialConsolidado + entradasPrevistas - saidasPrevistas;

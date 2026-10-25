@@ -3,19 +3,30 @@ import { db } from "@/lib/db";
 import { Building2, Layers, ShieldCheck, Home } from "lucide-react";
 
 export default async function CompaniesAndCostCentersPage() {
-  const companies = await db.company.findMany({
-    include: {
-      costCenters: true,
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  let companies: any[] = [];
+  let costCenters: any[] = [];
 
-  const costCenters = await db.costCenter.findMany({
-    include: {
-      company: true,
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  try {
+    companies = await db.company.findMany({
+      include: {
+        costCenters: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar empresas:", e);
+  }
+
+  try {
+    costCenters = await db.costCenter.findMany({
+      include: {
+        company: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar centros de custo:", e);
+  }
 
   return (
     <div className="space-y-6">
@@ -77,7 +88,7 @@ export default async function CompaniesAndCostCentersPage() {
                 Centro de Custo Vinculado:
               </span>
               <div className="flex flex-wrap gap-1.5">
-                {company.costCenters.map((cc) => (
+                {company.costCenters?.map((cc: any) => (
                   <span
                     key={cc.id}
                     className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium"

@@ -3,9 +3,14 @@ import { db } from "@/lib/db";
 import { ListTree, ShieldAlert, CheckCircle } from "lucide-react";
 
 export default async function ChartOfAccountsPage() {
-  const accounts = await db.chartOfAccount.findMany({
-    orderBy: { code: "asc" },
-  });
+  let accounts: any[] = [];
+  try {
+    accounts = await db.chartOfAccount.findMany({
+      orderBy: { code: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar plano de contas:", e);
+  }
 
   const typeLabels: Record<string, { label: string; color: string }> = {
     RECEITA_OPERACIONAL: { label: "Receita Operacional", color: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40" },

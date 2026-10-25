@@ -4,24 +4,47 @@ import { Landmark, AlertTriangle, TrendingDown, Clock, ShieldAlert } from "lucid
 import { DebtsClientView } from "./DebtsClientView";
 
 export default async function DebtsPage() {
-  const debts = await db.debtObligation.findMany({
-    include: {
-      company: true,
-      costCenter: true,
-      installments: {
-        orderBy: { installmentNumber: "asc" },
-      },
-    },
-    orderBy: { contractDate: "desc" },
-  });
+  let debts: any[] = [];
+  let companies: any[] = [];
+  let costCenters: any[] = [];
+  let accounts: any[] = [];
 
-  const companies = await db.company.findMany();
-  const costCenters = await db.costCenter.findMany();
-  const accounts = await db.chartOfAccount.findMany({
-    where: {
-      type: { in: ["OBRIGACAO_FINANCEIRA", "DESPESA_ADMINISTRATIVA", "CUSTO_DIRETO"] },
-    },
-  });
+  try {
+    debts = await db.debtObligation.findMany({
+      include: {
+        company: true,
+        costCenter: true,
+        installments: {
+          orderBy: { installmentNumber: "asc" },
+        },
+      },
+      orderBy: { contractDate: "desc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar dívidas:", e);
+  }
+
+  try {
+    companies = await db.company.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar empresas:", e);
+  }
+
+  try {
+    costCenters = await db.costCenter.findMany();
+  } catch (e) {
+    console.error("Erro ao carregar centros de custo:", e);
+  }
+
+  try {
+    accounts = await db.chartOfAccount.findMany({
+      where: {
+        type: { in: ["OBRIGACAO_FINANCEIRA", "DESPESA_ADMINISTRATIVA", "CUSTO_DIRETO"] },
+      },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar plano de contas:", e);
+  }
 
   // Indicadores de endividamento
   const totalDividasOriginal = debts.reduce((s, d) => s + Number(d.originalAmount), 0);

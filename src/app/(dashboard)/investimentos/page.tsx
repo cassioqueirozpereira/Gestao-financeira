@@ -6,7 +6,12 @@ import { InvestmentsClientView } from "./InvestmentsClientView";
 export const dynamic = "force-dynamic";
 
 export default async function InvestmentsPage() {
-  const capitalRecovery = await db.capitalRecovery.findFirst();
+  let capitalRecovery: any = null;
+  try {
+    capitalRecovery = await db.capitalRecovery.findFirst();
+  } catch (e) {
+    console.error("Erro ao carregar recuperação de capital:", e);
+  }
 
   return (
     <div className="space-y-6">

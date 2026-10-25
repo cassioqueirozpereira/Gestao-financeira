@@ -14,79 +14,118 @@ import {
 } from "lucide-react";
 
 interface DashboardPageProps {
-  searchParams: { centro?: string };
+  searchParams?: { centro?: string };
 }
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
-  const selectedCostCenterCode = searchParams.centro || "TODOS";
+  const params = await Promise.resolve(searchParams);
+  const selectedCostCenterCode = params?.centro || "TODOS";
 
   // Busca Centro de Custo se filtrado
   let costCenterFilterId: string | undefined = undefined;
   let costCenterName = "Visão Geral Consolidada";
 
   if (selectedCostCenterCode !== "TODOS") {
-    const cc = await db.costCenter.findUnique({
-      where: { code: selectedCostCenterCode },
-    });
-    if (cc) {
-      costCenterFilterId = cc.id;
-      costCenterName = cc.name;
+    try {
+      const cc = await db.costCenter.findUnique({
+        where: { code: selectedCostCenterCode },
+      });
+      if (cc) {
+        costCenterFilterId = cc.id;
+        costCenterName = cc.name;
+      }
+    } catch (e) {
+      console.error("Erro ao carregar centro de custo:", e);
     }
   }
 
   // 1. Saldos Bancários
-  const bankAccounts = await db.bankAccount.findMany();
+  let bankAccounts: any[] = [];
+  try {
+    bankAccounts = await db.bankAccount.findMany();
+  } catch (e) {
+    console.error("Erro ao buscar contas bancárias:", e);
+  }
   const totalBankBalance = bankAccounts.reduce(
     (sum, acc) => sum + Number(acc.currentBalance || 0),
     0
   );
 
   // 2. Contas a Pagar
-  const payables = await db.accountPayable.findMany({
-    where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-  });
+  let payables: any[] = [];
+  try {
+    payables = await db.accountPayable.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+    });
+  } catch (e) {
+    console.error("Erro ao buscar contas a pagar:", e);
+  }
 
   const now = new Date();
   const openPayables = payables.filter((p) => p.status === "EM_ABERTO" || p.status === "A_VENCER");
-  const overduePayables = payables.filter((p) => p.status === "VENCIDA" || (p.dueDate < now && p.status === "EM_ABERTO"));
+  const overduePayables = payables.filter(
+    (p) => p.status === "VENCIDA" || (p.dueDate && new Date(p.dueDate) < now && p.status === "EM_ABERTO")
+  );
   const paidThisMonth = payables.filter(
-    (p) => p.status === "PAGA" && p.paidAt && p.paidAt.getMonth() === now.getMonth()
+    (p) => p.status === "PAGA" && p.paidAt && new Date(p.paidAt).getMonth() === now.getMonth()
   );
 
-  const totalOpenPayableAmount = openPayables.reduce((s, p) => s + Number(p.originalAmount), 0);
-  const totalOverduePayableAmount = overduePayables.reduce((s, p) => s + Number(p.originalAmount), 0);
-  const totalPaidThisMonth = paidThisMonth.reduce((s, p) => s + Number(p.paidAmount), 0);
+  const totalOpenPayableAmount = openPayables.reduce((s, p) => s + Number(p.originalAmount || 0), 0);
+  const totalOverduePayableAmount = overduePayables.reduce((s, p) => s + Number(p.originalAmount || 0), 0);
+  const totalPaidThisMonth = paidThisMonth.reduce((s, p) => s + Number(p.paidAmount || 0), 0);
 
   // 3. Contas a Receber
-  const receivables = await db.accountReceivable.findMany({
-    where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-  });
+  let receivables: any[] = [];
+  try {
+    receivables = await db.accountReceivable.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+    });
+  } catch (e) {
+    console.error("Erro ao buscar contas a receber:", e);
+  }
 
   const openReceivables = receivables.filter((r) => r.status === "A_RECEBER" || r.status === "A_VENCER");
-  const overdueReceivables = receivables.filter((r) => r.status === "VENCIDA" || (r.dueDate < now && r.status === "A_RECEBER"));
+  const overdueReceivables = receivables.filter(
+    (r) => r.status === "VENCIDA" || (r.dueDate && new Date(r.dueDate) < now && r.status === "A_RECEBER")
+  );
   const receivedThisMonth = receivables.filter(
-    (r) => r.status === "RECEBIDA" && r.receivedAt && r.receivedAt.getMonth() === now.getMonth()
+    (r) => r.status === "RECEBIDA" && r.receivedAt && new Date(r.receivedAt).getMonth() === now.getMonth()
   );
 
-  const totalOpenReceivableAmount = openReceivables.reduce((s, r) => s + Number(r.originalAmount), 0);
-  const totalOverdueReceivableAmount = overdueReceivables.reduce((s, r) => s + Number(r.originalAmount), 0);
-  const totalReceivedThisMonth = receivedThisMonth.reduce((s, r) => s + Number(r.receivedAmount), 0);
+  const totalOpenReceivableAmount = openReceivables.reduce((s, r) => s + Number(r.originalAmount || 0), 0);
+  const totalOverdueReceivableAmount = overdueReceivables.reduce((s, r) => s + Number(r.originalAmount || 0), 0);
+  const totalReceivedThisMonth = receivedThisMonth.reduce((s, r) => s + Number(r.receivedAmount || 0), 0);
 
   // 4. Catálogo e Estoque
-  const products = await db.product.findMany();
+  let products: any[] = [];
+  try {
+    products = await db.product.findMany();
+  } catch (e) {
+    console.error("Erro ao buscar produtos:", e);
+  }
   const lowStockProducts = products.filter((p) => p.stockQuantity <= p.minStockQuantity);
 
   // 5. Recuperação de Capital D.A. Com Carinho
-  const capitalRecovery = await db.capitalRecovery.findFirst();
+  let capitalRecovery: any = null;
+  try {
+    capitalRecovery = await db.capitalRecovery.findFirst();
+  } catch (e) {
+    console.error("Erro ao buscar capital de recuperação:", e);
+  }
   const initialCap = Number(capitalRecovery?.initialCapital || 1600.0);
   const recoveredCap = Number(capitalRecovery?.recoveredAmount || 0);
   const remainingCap = initialCap - recoveredCap;
 
   // 6. Gastos com Mídia
-  const mediaExpenses = await db.mediaExpense.findMany({
-    where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-  });
-  const totalMediaSpent = mediaExpenses.reduce((s, m) => s + Number(m.spentAmount), 0);
+  let mediaExpenses: any[] = [];
+  try {
+    mediaExpenses = await db.mediaExpense.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+    });
+  } catch (e) {
+    console.error("Erro ao buscar despesas de mídia:", e);
+  }
+  const totalMediaSpent = mediaExpenses.reduce((s, m) => s + Number(m.spentAmount || 0), 0);
 
   // Formatação monetária
   const formatBRL = (val: number) =>

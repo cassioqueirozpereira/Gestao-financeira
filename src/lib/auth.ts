@@ -90,32 +90,37 @@ export async function clearSessionCookie() {
  * Retorna os dados do usuário autenticado no servidor
  */
 export async function getCurrentUser() {
-  const cookieStore = cookies();
-  const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
+  try {
+    const cookieStore = cookies();
+    const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
 
-  if (!sessionCookie?.value) {
+    if (!sessionCookie?.value) {
+      return null;
+    }
+
+    const payload = await verifySessionToken(sessionCookie.value);
+    if (!payload?.userId) {
+      return null;
+    }
+
+    const user = await db.user.findUnique({
+      where: { id: payload.userId },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+      },
+    });
+
+    if (!user || !user.isActive) {
+      return null;
+    }
+
+    return user;
+  } catch (error) {
+    console.error("Erro ao recuperar sessão atual:", error);
     return null;
   }
-
-  const payload = await verifySessionToken(sessionCookie.value);
-  if (!payload?.userId) {
-    return null;
-  }
-
-  const user = await db.user.findUnique({
-    where: { id: payload.userId },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-    },
-  });
-
-  if (!user || !user.isActive) {
-    return null;
-  }
-
-  return user;
 }

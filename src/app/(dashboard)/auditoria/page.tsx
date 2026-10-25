@@ -3,15 +3,20 @@ import { db } from "@/lib/db";
 import { ShieldCheck, History, User } from "lucide-react";
 
 export default async function AuditLogsPage() {
-  const logs = await db.auditLog.findMany({
-    include: {
-      user: {
-        select: { name: true, email: true },
+  let logs: any[] = [];
+  try {
+    logs = await db.auditLog.findMany({
+      include: {
+        user: {
+          select: { name: true, email: true },
+        },
       },
-    },
-    orderBy: { createdAt: "desc" },
-    take: 50,
-  });
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+  } catch (e) {
+    console.error("Erro ao carregar logs de auditoria:", e);
+  }
 
   const actionBadges: Record<string, string> = {
     CREATE: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-400",
