@@ -10,6 +10,7 @@ import {
   DollarSign,
   Filter,
   Edit2,
+  Trash2,
   Calendar,
   CreditCard,
   Building2,
@@ -192,6 +193,29 @@ export function ReceivablesClientView({
       );
       setEditingModal(null);
       setFeedback("Lançamento a receber atualizado com sucesso!");
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteReceivable = async (id: string, description: string) => {
+    if (!confirm(`Deseja realmente excluir a conta a receber "${description}"? Esta operação é irreversível.`)) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/contas-receber?id=${id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir conta");
+
+      setReceivables((prev) => prev.filter((r) => r.id !== id));
+      if (editingModal?.id === id) setEditingModal(null);
+      setFeedback(`Conta a receber "${description}" excluída com sucesso!`);
       router.refresh();
     } catch (err: any) {
       alert(err.message);
@@ -430,6 +454,14 @@ export function ReceivablesClientView({
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                           <span>Editar</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteReceivable(r.id, r.description)}
+                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition"
+                          title="Excluir recebimento"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Excluir</span>
                         </button>
                       </td>
                     </tr>
@@ -698,21 +730,32 @@ export function ReceivablesClientView({
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 pt-3">
+              <div className="flex justify-between items-center pt-3">
                 <button
                   type="button"
-                  onClick={() => setEditingModal(null)}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                  onClick={() => handleDeleteReceivable(editingModal.id, editingModal.description)}
+                  className="px-3 py-2 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
                 >
-                  Cancelar
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Conta</span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md"
-                >
-                  Salvar Alterações
-                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingModal(null)}
+                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
               </div>
             </form>
           </div>

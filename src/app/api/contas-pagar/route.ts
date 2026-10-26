@@ -202,3 +202,49 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    let id = searchParams.get("id");
+
+    if (!id) {
+      const body = await req.json().catch(() => ({}));
+      id = body.id;
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+    }
+
+    const existing = await db.accountPayable.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Lançamento a pagar não encontrado" }, { status: 404 });
+    }
+
+    // Limpa vínculos dependentes se existirem
+    await db.costAllocation.deleteMany({ where: { accountPayableId: id } });
+    await db.commissionRecord.updateMany({ where: { accountPayableId: id }, data: { accountPayableId: null } });
+
+    await db.accountPayable.delete({ where: { id } });
+
+    const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
+    await logAudit({
+      userId: user.id,
+      action: "DELETE",
+      entity: "AccountPayable",
+      entityId: id,
+      oldValues: existing,
+      ipAddress,
+      description: `Exclusão de conta a pagar: ${existing.description} (R$ ${existing.originalAmount})`,
+    });
+
+    return NextResponse.json({ success: true, message: "Lançamento excluído com sucesso" });
+  } catch (error: any) {
+    console.error("Erro ao excluir conta a pagar:", error);
+    return NextResponse.json({ error: error.message || "Erro interno ao excluir" }, { status: 500 });
+  }
+}

@@ -186,3 +186,48 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    let id = searchParams.get("id");
+
+    if (!id) {
+      const body = await req.json().catch(() => ({}));
+      id = body.id;
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+    }
+
+    const existing = await db.accountReceivable.findUnique({ where: { id } });
+    if (!existing) {
+      return NextResponse.json({ error: "Conta a receber não encontrada" }, { status: 404 });
+    }
+
+    // Limpa vínculos dependentes se existirem
+    await db.commissionRecord.updateMany({ where: { receivableId: id }, data: { receivableId: null } });
+
+    await db.accountReceivable.delete({ where: { id } });
+
+    const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
+    await logAudit({
+      userId: user.id,
+      action: "DELETE",
+      entity: "AccountReceivable",
+      entityId: id,
+      oldValues: existing,
+      ipAddress,
+      description: `Exclusão de conta a receber: ${existing.description} (R$ ${existing.originalAmount})`,
+    });
+
+    return NextResponse.json({ success: true, message: "Conta a receber excluída com sucesso" });
+  } catch (error: any) {
+    console.error("Erro ao excluir conta a receber:", error);
+    return NextResponse.json({ error: error.message || "Erro interno ao excluir" }, { status: 500 });
+  }
+}

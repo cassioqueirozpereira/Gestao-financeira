@@ -11,6 +11,7 @@ import {
   AlertCircle,
   Filter,
   Edit2,
+  Trash2,
   CheckSquare,
   Repeat,
   CreditCard,
@@ -186,6 +187,29 @@ export function PayablesClientView({
       setPayables(payables.map((item) => (item.id === editingItem.id ? { ...item, ...data.updated } : item)));
       setEditingItem(null);
       setFeedback("Lançamento atualizado com sucesso!");
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeletePayable = async (id: string, description: string) => {
+    if (!confirm(`Deseja realmente excluir a conta a pagar "${description}"? Esta operação é irreversível.`)) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/contas-pagar?id=${id}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir conta");
+
+      setPayables((prev) => prev.filter((p) => p.id !== id));
+      if (editingItem?.id === id) setEditingItem(null);
+      setFeedback(`Conta "${description}" excluída com sucesso!`);
       router.refresh();
     } catch (err: any) {
       alert(err.message);
@@ -438,6 +462,14 @@ export function PayablesClientView({
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                           <span>Editar</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeletePayable(p.id, p.description)}
+                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition"
+                          title="Excluir lançamento"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Excluir</span>
                         </button>
                       </td>
                     </tr>
@@ -762,21 +794,32 @@ export function PayablesClientView({
                 </label>
               </div>
 
-              <div className="flex justify-end gap-3 pt-3">
+              <div className="flex justify-between items-center pt-3">
                 <button
                   type="button"
-                  onClick={() => setEditingItem(null)}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                  onClick={() => handleDeletePayable(editingItem.id, editingItem.description)}
+                  className="px-3 py-2 bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 hover:bg-red-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition"
                 >
-                  Cancelar
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Excluir Conta</span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md"
-                >
-                  Salvar Alterações
-                </button>
+
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingItem(null)}
+                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
               </div>
             </form>
           </div>

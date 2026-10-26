@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Plus, X, Landmark, CreditCard, ShieldCheck, Wallet, DollarSign, AlertCircle } from "lucide-react";
+import { Plus, X, Landmark, CreditCard, ShieldCheck, Wallet, DollarSign, AlertCircle, Edit2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 interface BanksClientViewProps {
@@ -38,6 +38,10 @@ export function BanksClientView({
   const [creditLimit, setCreditLimit] = useState("");
   const [closingDay, setClosingDay] = useState("5");
   const [dueDay, setDueDay] = useState("12");
+
+  // Estados de Edição
+  const [editingAccount, setEditingAccount] = useState<any | null>(null);
+  const [editingCard, setEditingCard] = useState<any | null>(null);
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -108,6 +112,106 @@ export function BanksClientView({
     }
   };
 
+  const handleUpdateAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAccount) return;
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch("/api/bancos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editingAccount),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao atualizar conta");
+
+      setAccounts(accounts.map((acc) => (acc.id === editingAccount.id ? { ...acc, ...data.account } : acc)));
+      setEditingAccount(null);
+      router.refresh();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async (id: string, name: string) => {
+    if (!confirm(`Deseja realmente excluir a conta bancária "${name}"? Os lançamentos vinculados terão sua conta desassociada.`)) {
+      return;
+    }
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch(`/api/bancos?id=${id}&type=ACCOUNT`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir conta");
+
+      setAccounts(accounts.filter((acc) => acc.id !== id));
+      if (editingAccount?.id === id) setEditingAccount(null);
+      router.refresh();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpdateCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCard) return;
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch("/api/bancos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "CREDIT_CARD", ...editingCard }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao atualizar cartão");
+
+      setCards(cards.map((c) => (c.id === editingCard.id ? { ...c, ...data.card } : c)));
+      setEditingCard(null);
+      router.refresh();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteCard = async (id: string, nickname: string) => {
+    if (!confirm(`Deseja realmente excluir o cartão "${nickname}"? Esta operação é irreversível.`)) {
+      return;
+    }
+    setLoading(true);
+    setErrorMsg(null);
+
+    try {
+      const res = await fetch(`/api/bancos?id=${id}&type=CREDIT_CARD`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir cartão");
+
+      setCards(cards.filter((c) => c.id !== id));
+      if (editingCard?.id === id) setEditingCard(null);
+      router.refresh();
+    } catch (err: any) {
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
@@ -149,12 +253,30 @@ export function BanksClientView({
               >
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-bold text-sm text-slate-900 dark:text-white">
-                      {acc.bankName}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-400">
-                      {acc.accountType}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">
+                        {acc.bankName}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-400">
+                        {acc.accountType}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setEditingAccount({ ...acc })}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                        title="Editar conta bancária"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAccount(acc.id, acc.bankName)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"
+                        title="Excluir conta bancária"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-slate-500 mb-2">Titular: {acc.holderName}</p>
                 </div>
@@ -190,12 +312,30 @@ export function BanksClientView({
               >
                 <div>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="font-bold text-sm text-slate-900 dark:text-white">
-                      {card.nickname}
-                    </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-400">
-                      {card.cardBrand}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-sm text-slate-900 dark:text-white">
+                        {card.nickname}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-400">
+                        {card.cardBrand}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setEditingCard({ ...card })}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-violet-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                        title="Editar cartão de crédito"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteCard(card.id, card.nickname)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 transition"
+                        title="Excluir cartão de crédito"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-slate-500 mb-1">Titular: {card.holderName}</p>
                   <p className="text-slate-400 text-[11px]">
@@ -291,6 +431,224 @@ export function BanksClientView({
                 >
                   Salvar Conta
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Conta Bancária */}
+      {editingAccount && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative text-xs">
+            <button
+              onClick={() => setEditingAccount(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+              <Edit2 className="w-4 h-4 text-indigo-500" />
+              Editar Conta Bancária / Caixa
+            </h3>
+            <form onSubmit={handleUpdateAccount} className="space-y-3.5">
+              <div>
+                <label className="block font-semibold mb-1">Nome do Banco / Instituição *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingAccount.bankName || ""}
+                  onChange={(e) => setEditingAccount({ ...editingAccount, bankName: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Tipo de Conta</label>
+                  <select
+                    value={editingAccount.accountType || "CORRENTE"}
+                    onChange={(e) => setEditingAccount({ ...editingAccount, accountType: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                  >
+                    <option value="CORRENTE">Conta Corrente</option>
+                    <option value="POUPANCA">Poupança</option>
+                    <option value="PAGAMENTO">Conta de Pagamento</option>
+                    <option value="INVESTIMENTO">Conta de Investimento</option>
+                    <option value="CAIXA_FISICO">Caixa Físico</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Saldo Atual (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editingAccount.currentBalance ?? 0}
+                    onChange={(e) => setEditingAccount({ ...editingAccount, currentBalance: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none font-bold text-indigo-600 dark:text-indigo-400"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Nome do Titular *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingAccount.holderName || ""}
+                  onChange={(e) => setEditingAccount({ ...editingAccount, holderName: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Número da Conta / Agência (Opcional)</label>
+                <input
+                  type="text"
+                  value={editingAccount.accountNumber || ""}
+                  onChange={(e) => setEditingAccount({ ...editingAccount, accountNumber: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                />
+              </div>
+              <div className="pt-2 flex justify-between items-center">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteAccount(editingAccount.id, editingAccount.bankName)}
+                  className="px-3 py-1.5 rounded-xl text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 flex items-center gap-1 font-semibold"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingAccount(null)}
+                    className="px-3 py-1.5 border rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-1.5 bg-indigo-600 text-white font-semibold rounded-xl shadow"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Cartão de Crédito */}
+      {editingCard && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative text-xs">
+            <button
+              onClick={() => setEditingCard(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+              <Edit2 className="w-4 h-4 text-violet-500" />
+              Editar Cartão de Crédito
+            </h3>
+            <form onSubmit={handleUpdateCard} className="space-y-3.5">
+              <div>
+                <label className="block font-semibold mb-1">Apelido do Cartão *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingCard.nickname || ""}
+                  onChange={(e) => setEditingCard({ ...editingCard, nickname: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Bandeira</label>
+                  <select
+                    value={editingCard.cardBrand || "Mastercard"}
+                    onChange={(e) => setEditingCard({ ...editingCard, cardBrand: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                  >
+                    <option value="Mastercard">Mastercard</option>
+                    <option value="Visa">Visa</option>
+                    <option value="Elo">Elo</option>
+                    <option value="Hipercard">Hipercard</option>
+                    <option value="American Express">American Express</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Limite Informado (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={editingCard.creditLimit ?? 0}
+                    onChange={(e) => setEditingCard({ ...editingCard, creditLimit: parseFloat(e.target.value) || 0 })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none font-bold"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold mb-1">Dia Fechamento *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    required
+                    value={editingCard.closingDay ?? 5}
+                    onChange={(e) => setEditingCard({ ...editingCard, closingDay: parseInt(e.target.value, 10) || 1 })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold mb-1">Dia Vencimento *</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="31"
+                    required
+                    value={editingCard.dueDay ?? 12}
+                    onChange={(e) => setEditingCard({ ...editingCard, dueDay: parseInt(e.target.value, 10) || 1 })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Nome do Titular *</label>
+                <input
+                  type="text"
+                  required
+                  value={editingCard.holderName || ""}
+                  onChange={(e) => setEditingCard({ ...editingCard, holderName: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                />
+              </div>
+              <div className="pt-2 flex justify-between items-center">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteCard(editingCard.id, editingCard.nickname)}
+                  className="px-3 py-1.5 rounded-xl text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 flex items-center gap-1 font-semibold"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Excluir
+                </button>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingCard(null)}
+                    className="px-3 py-1.5 border rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="px-4 py-1.5 bg-violet-600 text-white font-semibold rounded-xl shadow"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
               </div>
             </form>
           </div>
