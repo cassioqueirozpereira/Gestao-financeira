@@ -202,7 +202,7 @@ export async function POST(req: NextRequest) {
             paymentType: "CARTAO",
             installmentNumber: it.installmentNumber ? parseInt(it.installmentNumber, 10) : null,
             totalInstallments: it.totalInstallments ? parseInt(it.totalInstallments, 10) : null,
-            notes: `Fatura Importada • Cartão ${card.nickname} • Categoria: ${rawCat || "Geral"}`,
+            notes: `Fatura Importada • Cartão ${card.nickname}`,
             status: "EM_ABERTO",
           },
         });

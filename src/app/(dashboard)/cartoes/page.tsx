@@ -203,6 +203,30 @@ export default function CartoesPage() {
     }
   };
 
+  // Formata data brasileira evitando desvio de fuso horário
+  const formatDateBR = (dateVal: string | Date | null | undefined) => {
+    if (!dateVal) return "-";
+    if (typeof dateVal === "string") {
+      const str = dateVal.split("T")[0];
+      if (str.includes("-")) {
+        const [y, m, d] = str.split("-");
+        if (y && m && d) return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+      }
+    }
+    const d = new Date(dateVal);
+    return d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+  };
+
+  // Limpa o texto de notas para não duplicar a categoria na descrição da compra
+  const cleanNotes = (notes: string | null | undefined) => {
+    if (!notes) return null;
+    const cleaned = notes
+      .replace(/[•\s-]*Categoria:\s*[^•\n\r]*/gi, "")
+      .replace(/[•\s-]+$/, "")
+      .trim();
+    return cleaned || null;
+  };
+
   // Extrai o nome da Categoria de forma resiliente
   const getCategoryName = (item: any) => {
     if (item.chartOfAccount?.name && item.chartOfAccount.name !== "Despesas Operacionais e Administrativas") {
@@ -683,6 +707,7 @@ export default function CartoesPage() {
               <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
                 <tr>
                   <th className="px-5 py-3">Descrição da Compra</th>
+                  <th className="px-5 py-3">Data do Gasto</th>
                   <th className="px-5 py-3">Categoria</th>
                   <th className="px-5 py-3">Centro de Custo</th>
                   <th className="px-5 py-3">Parcela</th>
@@ -694,7 +719,7 @@ export default function CartoesPage() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {currentInvoicesItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-10 text-slate-400">
+                    <td colSpan={8} className="text-center py-10 text-slate-400">
                       Nenhuma compra em cartão registrada para este mês vigente.
                     </td>
                   </tr>
@@ -703,9 +728,12 @@ export default function CartoesPage() {
                     <tr key={item.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
                       <td className="px-5 py-3.5 font-bold text-slate-900 dark:text-white">
                         {item.description}
-                        {item.notes && (
-                          <p className="text-[10px] text-slate-400 font-normal">{item.notes}</p>
+                        {cleanNotes(item.notes) && (
+                          <p className="text-[10px] text-slate-400 font-normal">{cleanNotes(item.notes)}</p>
                         )}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                        {formatDateBR(item.competenceDate)}
                       </td>
                       <td className="px-5 py-3.5">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
@@ -721,7 +749,7 @@ export default function CartoesPage() {
                           : "À vista"}
                       </td>
                       <td className="px-5 py-3.5 text-slate-600 dark:text-slate-300">
-                        {new Date(item.dueDate).toLocaleDateString("pt-BR")}
+                        {formatDateBR(item.dueDate)}
                       </td>
                       <td className="px-5 py-3.5 font-extrabold text-slate-900 dark:text-white text-right">
                         {formatBRL(Number(item.originalAmount))}
@@ -773,6 +801,7 @@ export default function CartoesPage() {
                       <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
                         <tr>
                           <th className="px-5 py-2.5">Descrição</th>
+                          <th className="px-5 py-2.5">Data da Compra</th>
                           <th className="px-5 py-2.5">Categoria</th>
                           <th className="px-5 py-2.5">Centro de Custo</th>
                           <th className="px-5 py-2.5">Parcela</th>
@@ -789,11 +818,14 @@ export default function CartoesPage() {
                           >
                             <td className="px-5 py-3 font-semibold text-slate-900 dark:text-white">
                               {item.description}
-                              {item.notes && (
+                              {cleanNotes(item.notes) && (
                                 <p className="text-[10px] text-slate-400 font-normal">
-                                  {item.notes}
+                                  {cleanNotes(item.notes)}
                                 </p>
                               )}
+                            </td>
+                            <td className="px-5 py-3 text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                              {formatDateBR(item.competenceDate)}
                             </td>
                             <td className="px-5 py-3">
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
@@ -807,7 +839,7 @@ export default function CartoesPage() {
                               {item.installmentNumber}/{item.totalInstallments}
                             </td>
                             <td className="px-5 py-3 text-slate-500">
-                              {new Date(item.dueDate).toLocaleDateString("pt-BR")}
+                              {formatDateBR(item.dueDate)}
                             </td>
                             <td className="px-5 py-3 font-bold text-right text-slate-900 dark:text-white">
                               {formatBRL(Number(item.originalAmount))}
