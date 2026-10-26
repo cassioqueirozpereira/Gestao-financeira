@@ -94,19 +94,81 @@ export async function POST(req: NextRequest) {
       const card = await db.creditCard.findUnique({ where: { id: cardId } });
       if (!card) return NextResponse.json({ error: "Cartão não encontrado" }, { status: 404 });
 
-      // Centros de custo e plano de contas padrão
-      const defaultCostCenter = await db.costCenter.findFirst({ where: { code: "CASA" } }) || await db.costCenter.findFirst();
-      const defaultChartAccount = await db.chartOfAccount.findFirst({
-        where: { type: "DESPESA_ADMINISTRATIVA" },
-      }) || await db.chartOfAccount.findFirst();
+      // Centros de custo disponíveis
+      const allCostCenters = await db.costCenter.findMany();
+      const defaultCostCenter = allCostCenters.find((c) => c.code === "CASA") || allCostCenters[0];
+      const defaultChartAccount =
+        (await db.chartOfAccount.findFirst({
+          where: { type: "DESPESA_ADMINISTRATIVA" },
+        })) || (await db.chartOfAccount.findFirst());
 
+      const categoryCache = new Map<string, any>();
       const createdPayables = [];
+
       for (const it of items) {
         const amount = Number(it.amount) || 0;
         if (amount <= 0) continue; // Pula transações zeradas ou pagamentos negativos
 
-        const cCenterId = it.costCenterId || defaultCostCenter?.id;
-        const cAccountId = it.chartOfAccountId || defaultChartAccount?.id;
+        const rawCat = (it.category || "").trim();
+
+        // 1. Resolve ou cria a Categoria (Plano de Contas) correspondente
+        let cAccountId = it.chartOfAccountId;
+        if (!cAccountId && rawCat) {
+          const cacheKey = rawCat.toLowerCase();
+          if (categoryCache.has(cacheKey)) {
+            cAccountId = categoryCache.get(cacheKey).id;
+          } else {
+            let account = await db.chartOfAccount.findFirst({
+              where: { name: { equals: rawCat, mode: "insensitive" } },
+            });
+
+            if (!account) {
+              const parent = await db.chartOfAccount.findFirst({ where: { code: "3" } });
+              const slug = rawCat
+                .toUpperCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "")
+                .replace(/[^A-Z0-9]/g, "_")
+                .slice(0, 15);
+              const uniqueCode = `3.CAT_${slug || "GERAL"}_${Math.floor(100 + Math.random() * 900)}`;
+
+              account = await db.chartOfAccount.create({
+                data: {
+                  code: uniqueCode,
+                  name: rawCat,
+                  level: 2,
+                  type: "DESPESA_ADMINISTRATIVA",
+                  parentId: parent?.id || null,
+                },
+              });
+            }
+
+            categoryCache.set(cacheKey, account);
+            cAccountId = account.id;
+          }
+        }
+
+        if (!cAccountId) {
+          cAccountId = defaultChartAccount?.id;
+        }
+
+        // 2. Determina Centro de Custo inteligente se não definido
+        let cCenterId = it.costCenterId;
+        if (!cCenterId) {
+          const normCat = rawCat.toLowerCase();
+          const normDesc = (it.description || "").toLowerCase();
+
+          if (normCat === "d.a" || normCat.includes("d.a") || normDesc.includes("embalaroma") || normDesc.includes("da embalagens")) {
+            const daCenter = allCostCenters.find((c) => c.code === "VELAS" || c.code === "DA_VELAS" || c.name.toLowerCase().includes("velas"));
+            cCenterId = daCenter?.id || defaultCostCenter?.id;
+          } else if (normCat.includes("assinatur") && (normDesc.includes("adobe") || normDesc.includes("aws") || normDesc.includes("google") || normDesc.includes("chatgpt"))) {
+            const sisCenter = allCostCenters.find((c) => c.code === "SISTEMAS" || c.name.toLowerCase().includes("sistemas"));
+            cCenterId = sisCenter?.id || defaultCostCenter?.id;
+          } else {
+            cCenterId = defaultCostCenter?.id;
+          }
+        }
+
         const compDate = it.date ? new Date(it.date) : new Date();
 
         // Determina data de vencimento da fatura
@@ -116,7 +178,6 @@ export async function POST(req: NextRequest) {
         } else if (defaultDueDate) {
           due = new Date(defaultDueDate);
         } else {
-          // Calcula com base no dia de fechamento e vencimento do cartão
           let invMonth = compDate.getMonth();
           let invYear = compDate.getFullYear();
           if (compDate.getDate() > (card.closingDay || 25)) {
@@ -141,7 +202,7 @@ export async function POST(req: NextRequest) {
             paymentType: "CARTAO",
             installmentNumber: it.installmentNumber ? parseInt(it.installmentNumber, 10) : null,
             totalInstallments: it.totalInstallments ? parseInt(it.totalInstallments, 10) : null,
-            notes: `Fatura Importada • Cartão ${card.nickname} • Categoria: ${it.category || "Geral"}`,
+            notes: `Fatura Importada • Cartão ${card.nickname} • Categoria: ${rawCat || "Geral"}`,
             status: "EM_ABERTO",
           },
         });

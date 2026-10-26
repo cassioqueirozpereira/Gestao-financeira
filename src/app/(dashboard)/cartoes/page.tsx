@@ -23,6 +23,7 @@ import {
   X,
   ChevronRight,
   Filter,
+  Tag,
 } from "lucide-react";
 
 export default function CartoesPage() {
@@ -202,6 +203,20 @@ export default function CartoesPage() {
     }
   };
 
+  // Extrai o nome da Categoria de forma resiliente
+  const getCategoryName = (item: any) => {
+    if (item.chartOfAccount?.name && item.chartOfAccount.name !== "Despesas Operacionais e Administrativas") {
+      return item.chartOfAccount.name;
+    }
+    if (item.notes) {
+      const match = item.notes.match(/Categoria:\s*([^•\n\r]+)/i);
+      if (match && match[1]?.trim() && match[1].trim() !== "Geral") {
+        return match[1].trim();
+      }
+    }
+    return item.chartOfAccount?.name || "Geral";
+  };
+
   // Parser universal de faturas CSV / Extrato
   const parseCsvContent = (content: string) => {
     const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -250,7 +265,7 @@ export default function CartoesPage() {
 
       const rawDate = dateIdx >= 0 ? row[dateIdx] : "";
       const rawDesc = descIdx >= 0 ? row[descIdx] : row[1] || `Despesa Linha ${i}`;
-      const rawCat = catIdx >= 0 ? row[catIdx] : "";
+      const rawCat = catIdx >= 0 ? (row[catIdx] || "").trim() : "";
       const rawType = typeIdx >= 0 ? row[typeIdx] : "";
       const rawVal = valIdx >= 0 ? row[valIdx] : row[row.length - 1] || "0";
       const rawInst = instIdx >= 0 ? row[instIdx] : "";
@@ -302,64 +317,40 @@ export default function CartoesPage() {
         totalInst = parseInt(instMatch[2], 10);
       }
 
-      // Sugestão de Centro de Custo inteligente
-      let matchedCcId = defaultCc;
-      const combinedText = `${rawDesc} ${rawCat}`.toLowerCase();
-      const velaKeywords = [
-        "vela",
-        "cera",
-        "pavio",
-        "aroma",
-        "essencia",
-        "embalaroma",
-        "d.a embalagens",
-        "embalagem",
-        "vidro",
-        "resina",
-      ];
-      const casaKeywords = [
-        "supermercado",
-        "guanabara",
-        "padaria",
-        "posto",
-        "farmacia",
-        "drogaria",
-        "restaurante",
-        "uber",
-        "ifood",
-        "pao",
-        "mercado",
-      ];
-      const sistKeywords = [
-        "adobe",
-        "google",
-        "aws",
-        "meta",
-        "facebook",
-        "chatgpt",
-        "openai",
-        "software",
-        "hospedagem",
-        "dominio",
-      ];
+      // Categoria limpa do CSV
+      const cleanCat = rawCat.replace(/^["']|["']$/g, "").trim();
 
-      if (velaKeywords.some((k) => combinedText.includes(k))) {
+      // Sugestão inteligente de Centro de Custo com base na Categoria e Descrição do CSV
+      let matchedCcId = defaultCc;
+      const normCat = cleanCat.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const normDesc = rawDesc.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+      if (
+        normCat === "d.a" ||
+        normCat.includes("d.a") ||
+        normDesc.includes("embalaroma") ||
+        normDesc.includes("da embalagens") ||
+        normDesc.includes("vela") ||
+        normDesc.includes("pavio") ||
+        normDesc.includes("cera") ||
+        normDesc.includes("resina")
+      ) {
         const cc = costCenters.find(
           (c) =>
+            c.code === "VELAS" ||
+            c.code === "DA_VELAS" ||
             c.name.toLowerCase().includes("vela") ||
-            c.name.toLowerCase().includes("producao") ||
-            c.name.toLowerCase().includes("mat")
+            c.name.toLowerCase().includes("resina")
         );
         if (cc) matchedCcId = cc.id;
-      } else if (casaKeywords.some((k) => combinedText.includes(k))) {
-        const cc = costCenters.find(
-          (c) => c.name.toLowerCase().includes("casa") || c.name.toLowerCase().includes("pessoal")
-        );
+      } else if (
+        normCat.includes("assinatur") &&
+        (normDesc.includes("adobe") || normDesc.includes("aws") || normDesc.includes("google") || normDesc.includes("chatgpt"))
+      ) {
+        const cc = costCenters.find((c) => c.code === "SISTEMAS" || c.name.toLowerCase().includes("sistema"));
         if (cc) matchedCcId = cc.id;
-      } else if (sistKeywords.some((k) => combinedText.includes(k))) {
-        const cc = costCenters.find(
-          (c) => c.name.toLowerCase().includes("sistema") || c.name.toLowerCase().includes("soft")
-        );
+      } else {
+        const cc = costCenters.find((c) => c.code === "CASA" || c.name.toLowerCase().includes("casa"));
         if (cc) matchedCcId = cc.id;
       }
 
@@ -367,7 +358,7 @@ export default function CartoesPage() {
         id: `csv_${i}_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
         date: parsedDate,
         description: rawDesc,
-        category: rawCat || (isPayment ? "Pagamento Fatura" : "Despesa Cartão"),
+        category: cleanCat || (isPayment ? "Pagamento Fatura" : "Despesa"),
         amount: Math.abs(finalVal),
         installmentNumber: instNum,
         totalInstallments: totalInst,
@@ -433,7 +424,7 @@ export default function CartoesPage() {
       setParsedItems([]);
       setImportStep("UPLOAD");
       setImportRawText("");
-      setFeedback(`Importação concluída! ${data.count} despesa(s) registradas.`);
+      setFeedback(`Importação concluída! ${data.count} despesa(s) registradas com suas categorias.`);
       fetchData();
     } catch (err: any) {
       alert(err.message);
@@ -522,7 +513,7 @@ export default function CartoesPage() {
           </div>
           <h2 className="text-2xl font-bold tracking-tight">Cartões de Crédito & Faturas Futuras</h2>
           <p className="text-sm text-purple-200 mt-1 max-w-xl">
-            Acompanhe faturas atuais, projeções de parcelas futuras e importe arquivos CSV ou extratos de cartões com categorização automática.
+            Acompanhe faturas atuais, projeções de parcelas futuras e importe arquivos CSV ou extratos de cartões com categorização automática da compra.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2.5 shrink-0">
@@ -692,6 +683,7 @@ export default function CartoesPage() {
               <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
                 <tr>
                   <th className="px-5 py-3">Descrição da Compra</th>
+                  <th className="px-5 py-3">Categoria</th>
                   <th className="px-5 py-3">Centro de Custo</th>
                   <th className="px-5 py-3">Parcela</th>
                   <th className="px-5 py-3">Vencimento Fatura</th>
@@ -702,7 +694,7 @@ export default function CartoesPage() {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {currentInvoicesItems.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-10 text-slate-400">
+                    <td colSpan={7} className="text-center py-10 text-slate-400">
                       Nenhuma compra em cartão registrada para este mês vigente.
                     </td>
                   </tr>
@@ -714,6 +706,11 @@ export default function CartoesPage() {
                         {item.notes && (
                           <p className="text-[10px] text-slate-400 font-normal">{item.notes}</p>
                         )}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
+                          {getCategoryName(item)}
+                        </span>
                       </td>
                       <td className="px-5 py-3.5 text-slate-600 dark:text-slate-400">
                         {item.costCenter?.name || "Geral"}
@@ -776,6 +773,7 @@ export default function CartoesPage() {
                       <thead className="bg-slate-100 dark:bg-slate-800/60 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
                         <tr>
                           <th className="px-5 py-2.5">Descrição</th>
+                          <th className="px-5 py-2.5">Categoria</th>
                           <th className="px-5 py-2.5">Centro de Custo</th>
                           <th className="px-5 py-2.5">Parcela</th>
                           <th className="px-5 py-2.5">Vencimento Programado</th>
@@ -796,6 +794,11 @@ export default function CartoesPage() {
                                   {item.notes}
                                 </p>
                               )}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 dark:bg-purple-950/80 dark:text-purple-300 border border-purple-200 dark:border-purple-800/50">
+                                {getCategoryName(item)}
+                              </span>
                             </td>
                             <td className="px-5 py-3 text-slate-500">
                               {item.costCenter?.name || "Geral"}
@@ -833,7 +836,7 @@ export default function CartoesPage() {
       {/* Modal - Importar Fatura (CSV / Extrato) */}
       {showImportModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-4xl w-full p-6 shadow-2xl max-h-[90vh] flex flex-col">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-5xl w-full p-6 shadow-2xl max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-xl bg-emerald-600/20 text-emerald-500 flex items-center justify-center">
@@ -844,7 +847,7 @@ export default function CartoesPage() {
                     Importação de Fatura de Cartão de Crédito
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Suporte universal para arquivos CSV de Nubank, C6, Itaú, Bradesco, Santander e outros
+                    Captura automática da Categoria da compra, valores, parcelas e centro de custo
                   </p>
                 </div>
               </div>
@@ -898,7 +901,7 @@ export default function CartoesPage() {
                     Arraste ou selecione o arquivo CSV da Fatura
                   </p>
                   <p className="text-xs text-slate-400 mb-4">
-                    Formatos aceitos: .csv, .txt (separados por ponto-e-vírgula ou vírgula)
+                    Formatos aceitos: .csv, .txt (colunas detectadas: Data, Descrição, Categoria, Valor, Parcela)
                   </p>
                   <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl text-xs transition shadow-md">
                     <span>Selecionar Arquivo CSV</span>
@@ -919,7 +922,7 @@ export default function CartoesPage() {
                     rows={4}
                     value={importRawText}
                     onChange={(e) => setImportRawText(e.target.value)}
-                    placeholder="Exemplo: Data;Estabelecimento;Portador;Valor;Parcela&#10;04/09/2024;Supermercado;CARLOS;R$ 682,90;4 de 12"
+                    placeholder="Exemplo: Data;Descrição;Categoria;Valor;Parcela&#10;2026-10-19;SPOTIFY;Assinaturas;40,90;;"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-mono text-xs"
                   />
                   <div className="flex justify-end mt-2">
@@ -974,6 +977,7 @@ export default function CartoesPage() {
                         <th className="px-3 py-2 w-10 text-center">Sel.</th>
                         <th className="px-3 py-2">Data</th>
                         <th className="px-3 py-2">Descrição / Estabelecimento</th>
+                        <th className="px-3 py-2">Categoria da Compra</th>
                         <th className="px-3 py-2">Parcela</th>
                         <th className="px-3 py-2">Centro de Custo</th>
                         <th className="px-3 py-2 text-right">Valor</th>
@@ -1006,16 +1010,26 @@ export default function CartoesPage() {
                             <div className="font-bold text-slate-900 dark:text-white">
                               {item.description}
                             </div>
-                            <div className="text-[10px] text-slate-400">
-                              {item.category}
-                              {item.isPayment && (
-                                <span className="ml-1 px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-500 font-semibold">
-                                  Pagamento/Crédito
-                                </span>
-                              )}
-                            </div>
+                            {item.isPayment && (
+                              <span className="inline-block mt-0.5 px-1.5 py-0.2 rounded text-[9px] bg-amber-500/20 text-amber-500 font-semibold">
+                                Pagamento/Crédito
+                              </span>
+                            )}
                           </td>
-                          <td className="px-3 py-2 text-slate-500 font-semibold">
+                          <td className="px-3 py-2">
+                            <input
+                              type="text"
+                              value={item.category}
+                              onChange={(e) => {
+                                const next = [...parsedItems];
+                                next[index].category = e.target.value;
+                                setParsedItems(next);
+                              }}
+                              placeholder="Categoria"
+                              className="w-32 px-2 py-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-xs font-semibold text-purple-700 dark:text-purple-300"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-slate-500 font-semibold whitespace-nowrap">
                             {item.installmentNumber
                               ? `${item.installmentNumber}/${item.totalInstallments || item.installmentNumber}`
                               : "À vista"}
