@@ -210,39 +210,49 @@ export async function DELETE(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     let id = searchParams.get("id");
+    let ids: string[] = [];
 
-    if (!id) {
-      const body = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({}));
+    if (body.ids && Array.isArray(body.ids)) {
+      ids = body.ids;
+    } else if (body.id) {
       id = body.id;
     }
 
-    if (!id) {
-      return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+    if (id && ids.length === 0) {
+      ids = [id];
     }
 
-    const existing = await db.accountPayable.findUnique({ where: { id } });
-    if (!existing) {
-      return NextResponse.json({ error: "Lançamento a pagar não encontrado" }, { status: 404 });
+    if (ids.length === 0) {
+      return NextResponse.json({ error: "Nenhum ID fornecido para exclusão" }, { status: 400 });
     }
 
     // Limpa vínculos dependentes se existirem
-    await db.costAllocation.deleteMany({ where: { accountPayableId: id } });
-    await db.commissionRecord.updateMany({ where: { accountPayableId: id }, data: { accountPayableId: null } });
+    await db.costAllocation.deleteMany({ where: { accountPayableId: { in: ids } } });
+    await db.commissionRecord.updateMany({
+      where: { accountPayableId: { in: ids } },
+      data: { accountPayableId: null },
+    });
 
-    await db.accountPayable.delete({ where: { id } });
+    const deleted = await db.accountPayable.deleteMany({
+      where: { id: { in: ids } },
+    });
 
     const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
     await logAudit({
       userId: user.id,
       action: "DELETE",
       entity: "AccountPayable",
-      entityId: id,
-      oldValues: existing,
+      entityId: ids.join(",").slice(0, 50),
       ipAddress,
-      description: `Exclusão de conta a pagar: ${existing.description} (R$ ${existing.originalAmount})`,
+      description: `Exclusão de ${deleted.count} conta(s) a pagar`,
     });
 
-    return NextResponse.json({ success: true, message: "Lançamento excluído com sucesso" });
+    return NextResponse.json({
+      success: true,
+      count: deleted.count,
+      message: `${deleted.count} conta(s) a pagar excluída(s) com sucesso`,
+    });
   } catch (error: any) {
     console.error("Erro ao excluir conta a pagar:", error);
     return NextResponse.json({ error: error.message || "Erro interno ao excluir" }, { status: 500 });

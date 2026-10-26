@@ -15,6 +15,7 @@ import {
   CreditCard,
   Building2,
   CheckSquare,
+  Square,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -48,6 +49,7 @@ export function ReceivablesClientView({
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Form states de criação
   const [description, setDescription] = useState("");
@@ -224,6 +226,51 @@ export function ReceivablesClientView({
     }
   };
 
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === filteredReceivables.length && filteredReceivables.length > 0) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredReceivables.map((r) => r.id));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    const count = selectedIds.length;
+    if (
+      !confirm(
+        `Deseja realmente apagar todas as ${count} contas a receber selecionadas de uma só vez? Esta operação é irreversível.`
+      )
+    ) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await fetch("/api/contas-receber", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedIds }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir contas");
+
+      setReceivables((prev) => prev.filter((r) => !selectedIds.includes(r.id)));
+      setSelectedIds([]);
+      setFeedback(`${count} conta(s) a receber excluída(s) com sucesso!`);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
@@ -249,16 +296,54 @@ export function ReceivablesClientView({
     <div className="space-y-5">
       {/* Top Action */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-          Listando {filteredReceivables.length} contas a receber
-        </span>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Lançamento a Receber
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+            Listando {filteredReceivables.length} contas a receber
+          </span>
+          {selectedIds.length > 0 && (
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-950/80 dark:text-emerald-300">
+              {selectedIds.length} selecionada(s)
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSelectAll}
+            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition"
+          >
+            {selectedIds.length === filteredReceivables.length && filteredReceivables.length > 0 ? (
+              <CheckSquare className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <Square className="w-4 h-4 text-slate-400" />
+            )}
+            <span>
+              {selectedIds.length === filteredReceivables.length && filteredReceivables.length > 0
+                ? "Desmarcar Todos"
+                : "Selecionar Tudo"}
+            </span>
+          </button>
+
+          {selectedIds.length > 0 && (
+            <button
+              type="button"
+              onClick={handleDeleteSelected}
+              disabled={loading}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl text-xs font-bold shadow-md shadow-rose-600/20 transition"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span>Excluir Selecionados ({selectedIds.length})</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setShowModal(true)}
+            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
+          >
+            <Plus className="w-4 h-4" />
+            Novo Lançamento a Receber
+          </button>
+        </div>
       </div>
 
       {feedback && (
@@ -357,6 +442,18 @@ export function ReceivablesClientView({
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
               <tr>
+                <th className="px-3 py-3.5 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={
+                      filteredReceivables.length > 0 &&
+                      selectedIds.length === filteredReceivables.length
+                    }
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    title="Selecionar todas as contas a receber"
+                  />
+                </th>
                 <th className="px-4 py-3.5">Descrição</th>
                 <th className="px-4 py-3.5">Cliente</th>
                 <th className="px-4 py-3.5">Centro de Custo</th>
@@ -370,7 +467,7 @@ export function ReceivablesClientView({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredReceivables.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-slate-400">
+                  <td colSpan={9} className="text-center py-10 text-slate-400">
                     Nenhuma conta a receber encontrada com os filtros informados.
                   </td>
                 </tr>
@@ -379,12 +476,23 @@ export function ReceivablesClientView({
                   const isReceived = r.status === "RECEBIDA";
                   const dueDate = new Date(r.dueDate);
                   const isOverdue = !isReceived && dueDate < new Date();
+                  const isSelected = selectedIds.includes(r.id);
 
                   return (
                     <tr
                       key={r.id}
-                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                      className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
+                        isSelected ? "bg-emerald-50/50 dark:bg-emerald-950/20" : ""
+                      }`}
                     >
+                      <td className="px-3 py-3.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelect(r.id)}
+                          className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                      </td>
                       <td className="px-4 py-3.5 font-bold text-slate-900 dark:text-white">
                         {r.description}
                         {r.notes && <p className="text-[11px] text-slate-400 font-normal">{r.notes}</p>}
