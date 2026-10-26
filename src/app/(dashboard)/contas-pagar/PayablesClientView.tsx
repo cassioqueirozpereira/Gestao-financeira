@@ -268,6 +268,30 @@ export function PayablesClientView({
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
+  // Formata data brasileira evitando desvio de fuso horário
+  const formatDateBR = (dateVal: string | Date | null | undefined) => {
+    if (!dateVal) return "-";
+    if (typeof dateVal === "string") {
+      const str = dateVal.split("T")[0];
+      if (str.includes("-")) {
+        const [y, m, d] = str.split("-");
+        if (y && m && d) return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+      }
+    }
+    const d = new Date(dateVal);
+    return d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+  };
+
+  // Limpa o texto de notas para não duplicar a categoria na descrição da conta
+  const cleanNotes = (notes: string | null | undefined) => {
+    if (!notes) return null;
+    const cleaned = notes
+      .replace(/[•\s-]*Categoria:\s*[^•\n\r]*/gi, "")
+      .replace(/[•\s-]+$/, "")
+      .trim();
+    return cleaned || null;
+  };
+
   // Aplicação dos filtros
   const filteredPayables = payables.filter((p) => {
     if (filterType !== "TODOS" && (p.paymentType || "BOLETO") !== filterType) return false;
@@ -451,6 +475,7 @@ export function PayablesClientView({
                   />
                 </th>
                 <th className="px-4 py-3.5">Descrição</th>
+                <th className="px-4 py-3.5">Data do Gasto</th>
                 <th className="px-4 py-3.5">Centro & Categoria</th>
                 <th className="px-4 py-3.5">Tipo & Programação</th>
                 <th className="px-4 py-3.5">Vencimento</th>
@@ -462,7 +487,7 @@ export function PayablesClientView({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredPayables.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-10 text-slate-400">
+                  <td colSpan={9} className="text-center py-10 text-slate-400">
                     Nenhum lançamento a pagar encontrado com os filtros selecionados.
                   </td>
                 </tr>
@@ -497,7 +522,11 @@ export function PayablesClientView({
                             </span>
                           )}
                         </div>
-                        {p.notes && <p className="text-[11px] text-slate-400 mt-0.5">{p.notes}</p>}
+                        {cleanNotes(p.notes) && <p className="text-[11px] text-slate-400 mt-0.5">{cleanNotes(p.notes)}</p>}
+                      </td>
+
+                      <td className="px-4 py-3.5 text-slate-600 dark:text-slate-300 font-medium whitespace-nowrap">
+                        {formatDateBR(p.competenceDate)}
                       </td>
 
                       <td className="px-4 py-3.5">
@@ -516,18 +545,18 @@ export function PayablesClientView({
                         {p.scheduledDate && (
                           <div className="text-[10px] text-indigo-500 dark:text-indigo-400 mt-1 flex items-center gap-1">
                             <Clock className="w-2.5 h-2.5" />
-                            Prog: {new Date(p.scheduledDate).toLocaleDateString("pt-BR")}
+                            Prog: {formatDateBR(p.scheduledDate)}
                           </div>
                         )}
                       </td>
 
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-3.5 whitespace-nowrap">
                         <div className={isOverdue ? "text-red-500 font-bold" : "text-slate-600 dark:text-slate-300"}>
-                          {dueDate.toLocaleDateString("pt-BR")}
+                          {formatDateBR(p.dueDate)}
                         </div>
                         {p.paidAt && (
                           <div className="text-[10px] text-emerald-500 font-medium">
-                            Pago em: {new Date(p.paidAt).toLocaleDateString("pt-BR")}
+                            Pago em: {formatDateBR(p.paidAt)}
                           </div>
                         )}
                       </td>
