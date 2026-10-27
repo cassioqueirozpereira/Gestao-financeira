@@ -212,7 +212,7 @@ export async function PUT(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json();
-    const { id, action = "edit", channel, discountAmount, status } = body;
+    const { id, action = "edit", channel, discountAmount, status, items } = body;
 
     if (!id) return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
 
@@ -264,10 +264,64 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: true, order: updatedOrder });
     }
 
-    // AÇÃO 2: EDITAR VENDA (Canal, Desconto)
-    const subtotal = existingOrder.items.reduce((s, it) => s + Number(it.totalPrice), 0);
+    // AÇÃO 2: EDITAR VENDA (Itens, Canal, Desconto)
+    let validatedItems = null;
+    let newSubtotal = 0;
+
+    if (items && Array.isArray(items)) {
+      if (items.length === 0) {
+        return NextResponse.json({ error: "A venda deve conter pelo menos 1 item." }, { status: 400 });
+      }
+
+      validatedItems = items.map((item: any) => {
+        const q = Math.max(1, parseInt(item.quantity, 10) || 1);
+        const price = parseFloat(item.unitPrice) || 0;
+        const totalItem = q * price;
+        newSubtotal += totalItem;
+        return {
+          orderId: id,
+          productId: item.productId,
+          quantity: q,
+          unitPrice: price,
+          totalPrice: totalItem,
+        };
+      });
+
+      // Se a venda não estava cancelada, faz a reconciliação do estoque:
+      if (existingOrder.status !== "CANCELADO") {
+        // 1. Devolve os itens antigos para o estoque
+        for (const oldIt of existingOrder.items) {
+          await db.product.update({
+            where: { id: oldIt.productId },
+            data: { stockQuantity: { increment: oldIt.quantity } },
+          });
+        }
+        // 2. Dá baixa nos novos itens do estoque
+        for (const newIt of validatedItems) {
+          await db.product.update({
+            where: { id: newIt.productId },
+            data: { stockQuantity: { decrement: newIt.quantity } },
+          });
+        }
+      }
+
+      // 3. Substitui os OrderItems
+      await db.orderItem.deleteMany({
+        where: { orderId: id },
+      });
+      await Promise.all(
+        validatedItems.map((it) =>
+          db.orderItem.create({
+            data: it,
+          })
+        )
+      );
+    } else {
+      newSubtotal = existingOrder.items.reduce((s, it) => s + Number(it.totalPrice), 0);
+    }
+
     const newDiscount = discountAmount !== undefined ? parseFloat(discountAmount) : Number(existingOrder.discountAmount);
-    const newTotal = Math.max(0, subtotal - newDiscount);
+    const newTotal = Math.max(0, newSubtotal - newDiscount);
 
     const updatedOrder = await db.order.update({
       where: { id },
@@ -292,9 +346,14 @@ export async function PUT(req: NextRequest) {
       action: "UPDATE",
       entity: "Order",
       entityId: id,
-      newValues: { totalAmount: newTotal, discountAmount: newDiscount, channel },
+      newValues: {
+        totalAmount: newTotal,
+        discountAmount: newDiscount,
+        channel,
+        itemsCount: validatedItems ? validatedItems.length : existingOrder.items.length,
+      },
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-      description: `Edição dos dados da venda ${existingOrder.orderNumber}`,
+      description: `Edição dos dados e itens da venda ${existingOrder.orderNumber}`,
     });
 
     return NextResponse.json({ success: true, order: updatedOrder });

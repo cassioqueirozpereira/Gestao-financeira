@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       costCenterCode = "SISTEMAS",
     } = body;
 
-    // Ação Especial: Gerar Mensalidade do Mês para o Cliente
+    // Ação Especial: Gerar Mensalidade(s) para o Cliente (suporta geração dos próximos meses)
     if (action === "generate_monthly_fee") {
       if (!customerId) {
         return NextResponse.json({ error: "Cliente não informado" }, { status: 400 });
@@ -85,43 +85,89 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Centro de custo ou plano de contas não configurado" }, { status: 400 });
       }
 
-      const now = new Date();
+      const count = Math.min(36, Math.max(1, parseInt(body.monthsCount, 10) || 1));
+      const startOffset = parseInt(body.startOffset, 10) || 0;
       const bDay = client.billingDay || 10;
-      const dueDate = new Date(now.getFullYear(), now.getMonth(), bDay);
-      // Se dia já passou no mês, agenda para próximo mês ou dia atual
-      const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
-      const competence = `${monthNames[now.getMonth()]}/${now.getFullYear()}`;
+      const now = new Date();
+      const monthNames = [
+        "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+        "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
+      ];
 
       const activeContract = client.contracts[0];
+      const createdReceivables = [];
+      let skippedCount = 0;
 
-      const receivable = await db.accountReceivable.create({
-        data: {
-          description: `Mensalidade ${competence} — ${client.name}`,
-          customerId: client.id,
-          costCenterId: costCenter.id,
-          chartOfAccountId: chartAccount.id,
-          originalAmount: fee,
-          competenceDate: now,
-          dueDate: dueDate,
-          status: "A_RECEBER",
-          paymentType: client.paymentMethod || "PIX",
-          contractId: activeContract?.id || null,
-          notes: `Geração automática de mensalidade recorrente. Forma de pgto: ${client.paymentMethod || "PIX"}`,
-        },
-      });
+      for (let i = 0; i < count; i++) {
+        const targetDate = new Date(now.getFullYear(), now.getMonth() + startOffset + i, 1);
+        const targetYear = targetDate.getFullYear();
+        const targetMonth = targetDate.getMonth();
+        const competence = `${monthNames[targetMonth]}/${targetYear}`;
+        const description = `Mensalidade ${competence} — ${client.name}`;
+
+        // Limita o dia de vencimento ao último dia do mês (ex: 28/29 de fev, 30 de abr)
+        const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        const actualDueDay = Math.min(bDay, daysInMonth);
+        const dueDate = new Date(targetYear, targetMonth, actualDueDay, 12, 0, 0);
+        const competenceDate = new Date(targetYear, targetMonth, 1, 12, 0, 0);
+
+        // Previne duplicidade de mensalidade para a mesma competência
+        const existing = await db.accountReceivable.findFirst({
+          where: {
+            customerId: client.id,
+            description,
+            status: { not: "CANCELADA" },
+          },
+        });
+
+        if (existing) {
+          skippedCount++;
+          continue;
+        }
+
+        const receivable = await db.accountReceivable.create({
+          data: {
+            description,
+            customerId: client.id,
+            costCenterId: costCenter.id,
+            chartOfAccountId: chartAccount.id,
+            originalAmount: fee,
+            competenceDate,
+            dueDate,
+            status: "A_RECEBER",
+            paymentType: client.paymentMethod || "PIX",
+            contractId: activeContract?.id || null,
+            notes: `Geração automática de mensalidade recorrente (${competence}). Forma de pgto: ${client.paymentMethod || "PIX"}`,
+          },
+        });
+
+        createdReceivables.push(receivable);
+      }
 
       // Log de Auditoria
-      await logAudit({
-        userId: user.id,
-        action: "CREATE",
-        entity: "AccountReceivable",
-        entityId: receivable.id,
-        newValues: { description: receivable.description, originalAmount: fee },
-        ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-        description: `Geração de mensalidade para ${client.name} (R$ ${fee})`,
-      });
+      if (createdReceivables.length > 0) {
+        await logAudit({
+          userId: user.id,
+          action: "CREATE",
+          entity: "AccountReceivable",
+          entityId: createdReceivables[0].id,
+          newValues: {
+            count: createdReceivables.length,
+            totalGenerated: fee * createdReceivables.length,
+            clientName: client.name,
+          },
+          ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+          description: `Geração de ${createdReceivables.length} mensalidade(s) para ${client.name} (R$ ${fee} cada)`,
+        });
+      }
 
-      return NextResponse.json({ success: true, receivable });
+      return NextResponse.json({
+        success: true,
+        createdCount: createdReceivables.length,
+        skippedCount,
+        receivables: createdReceivables,
+        receivable: createdReceivables[0] || null,
+      });
     }
 
     // Criar Cliente

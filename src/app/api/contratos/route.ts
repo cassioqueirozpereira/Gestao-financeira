@@ -175,6 +175,32 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: true, contract: updated });
     }
 
+    // AÇÃO: INATIVAÇÃO DO CONTRATO
+    if (action === "inativar") {
+      const updated = await db.contract.update({
+        where: { id },
+        data: { status: "CANCELADO" },
+      });
+
+      // Cancela títulos a vencer em aberto vinculados a este contrato
+      await db.accountReceivable.updateMany({
+        where: { contractId: id, status: "A_RECEBER" },
+        data: { status: "CANCELADA" },
+      });
+
+      await logAudit({
+        userId: user.id,
+        action: "STATUS_CHANGE",
+        entity: "Contract",
+        entityId: id,
+        newValues: { status: "CANCELADO" },
+        ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+        description: `Inativação de contrato ${contract.contractNumber}`,
+      });
+
+      return NextResponse.json({ success: true, contract: updated });
+    }
+
     // AÇÃO 2: EDITAR CONTRATO
     const {
       title,

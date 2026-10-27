@@ -39,6 +39,8 @@ export default function VendasPage() {
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
   const [editChannel, setEditChannel] = useState("");
   const [editDiscount, setEditDiscount] = useState("0");
+  const [editItems, setEditItems] = useState<{ productId: string; quantity: number; unitPrice: number; productName?: string }[]>([]);
+  const [editSelectedProductId, setEditSelectedProductId] = useState("");
 
   // Itens da Venda
   const [items, setItems] = useState<{ productId: string; quantity: number; unitPrice: number }[]>([]);
@@ -182,11 +184,58 @@ export default function VendasPage() {
     setEditingOrder(order);
     setEditChannel(order.channel || "Balcão / Instagram");
     setEditDiscount(String(order.discountAmount || 0));
+    setEditItems(
+      (order.items || []).map((it: any) => ({
+        productId: it.productId,
+        quantity: it.quantity,
+        unitPrice: Number(it.unitPrice),
+        productName: it.product?.name || "Produto",
+      }))
+    );
+    if (products.length > 0) {
+      setEditSelectedProductId(products[0].id);
+    }
+  };
+
+  const handleEditAddItem = () => {
+    const prod = products.find((p) => p.id === editSelectedProductId);
+    if (!prod) return;
+
+    const existingIndex = editItems.findIndex((it) => it.productId === prod.id);
+    if (existingIndex >= 0) {
+      const updated = [...editItems];
+      updated[existingIndex].quantity += 1;
+      setEditItems(updated);
+    } else {
+      setEditItems([
+        ...editItems,
+        {
+          productId: prod.id,
+          quantity: 1,
+          unitPrice: Number(prod.basePrice),
+          productName: prod.name,
+        },
+      ]);
+    }
+  };
+
+  const handleEditRemoveItem = (index: number) => {
+    setEditItems(editItems.filter((_, i) => i !== index));
+  };
+
+  const handleEditItemQuantityChange = (index: number, quantity: number) => {
+    const updated = [...editItems];
+    updated[index].quantity = Math.max(1, quantity);
+    setEditItems(updated);
   };
 
   const handleConfirmEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingOrder) return;
+    if (editItems.length === 0) {
+      alert("O pedido deve ter pelo menos 1 item.");
+      return;
+    }
     setIsSubmitting(true);
     try {
       const res = await fetch("/api/vendas", {
@@ -197,6 +246,11 @@ export default function VendasPage() {
           action: "edit",
           channel: editChannel,
           discountAmount: parseFloat(editDiscount) || 0,
+          items: editItems.map((it) => ({
+            productId: it.productId,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+          })),
         }),
       });
       const data = await res.json();
@@ -204,7 +258,7 @@ export default function VendasPage() {
 
       setOrders(orders.map((o) => (o.id === editingOrder.id ? { ...o, ...data.order } : o)));
       setEditingOrder(null);
-      setFeedback(`Venda ${data.order.orderNumber} atualizada com sucesso!`);
+      setFeedback(`Venda ${data.order.orderNumber} atualizada com sucesso! Itens e estoque atualizados.`);
       fetchData();
     } catch (err: any) {
       alert(err.message);
@@ -699,83 +753,215 @@ export default function VendasPage() {
         </div>
       )}
 
-      {/* Modal - Editar Venda */}
-      {editingOrder && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Edit2 className="w-4 h-4 text-rose-500" />
-                Editar Dados da Venda {editingOrder.orderNumber}
-              </h3>
-              <button onClick={() => setEditingOrder(null)} className="text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+      {/* Modal - Editar Venda com opção de adicionar novos itens */}
+      {editingOrder && (() => {
+        const editSubtotal = editItems.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
+        const editTotalSale = Math.max(0, editSubtotal - (parseFloat(editDiscount) || 0));
+
+        return (
+          <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+              <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3 mb-4">
+                <div>
+                  <span className="text-[10px] font-bold text-rose-600 dark:text-rose-400 uppercase tracking-wider flex items-center gap-1">
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    Edição do Pedido
+                  </span>
+                  <h3 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                    <Edit2 className="w-4 h-4 text-rose-500" />
+                    Editar Venda {editingOrder.orderNumber}
+                  </h3>
+                </div>
+                <button onClick={() => setEditingOrder(null)} className="text-slate-400 hover:text-white">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <form onSubmit={handleConfirmEdit} className="space-y-4 text-xs">
+                {/* Cliente e Canal */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                      Cliente
+                    </label>
+                    <input
+                      type="text"
+                      disabled
+                      value={editingOrder.customer?.name || "Consumidor Avulso"}
+                      className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 font-semibold cursor-not-allowed"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                      Canal de Venda
+                    </label>
+                    <input
+                      type="text"
+                      value={editChannel}
+                      onChange={(e) => setEditChannel(e.target.value)}
+                      placeholder="Ex: Balcão, Instagram, WhatsApp, Feira"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                    />
+                  </div>
+                </div>
+
+                {/* Seção de Adicionar Novos Itens e Gerenciar Itens do Pedido */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-900 dark:text-white uppercase text-[10px] tracking-wider block">
+                      Itens do Pedido & Adição de Novos Produtos
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-semibold">
+                      {editItems.length} produto(s) no pedido
+                    </span>
+                  </div>
+
+                  {/* Seletor para adicionar novo item ao pedido */}
+                  <div className="flex gap-2">
+                    <select
+                      value={editSelectedProductId}
+                      onChange={(e) => setEditSelectedProductId(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-xs"
+                    >
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — {formatBRL(Number(p.basePrice))} (Estoque: {p.stockQuantity} un)
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleEditAddItem}
+                      className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs shrink-0 shadow-sm flex items-center gap-1"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Adicionar Item</span>
+                    </button>
+                  </div>
+
+                  {/* Lista de Itens do Pedido */}
+                  {editItems.length === 0 ? (
+                    <div className="text-center py-4 text-xs text-red-500 font-semibold italic">
+                      O pedido precisa de pelo menos 1 item. Adicione um produto acima.
+                    </div>
+                  ) : (
+                    <div className="space-y-2 pt-1 max-h-56 overflow-y-auto pr-1">
+                      {editItems.map((it, idx) => {
+                        const prod = products.find((p) => p.id === it.productId);
+                        const displayName = it.productName || prod?.name || "Produto";
+                        return (
+                          <div
+                            key={idx}
+                            className="flex items-center justify-between p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700 text-xs"
+                          >
+                            <div className="flex-1 min-w-0 pr-2">
+                              <span className="font-bold text-slate-900 dark:text-white block truncate">
+                                {displayName}
+                              </span>
+                              <span className="text-[10px] text-slate-400">
+                                Unitário: {formatBRL(it.unitPrice)}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-3 shrink-0">
+                              <div className="flex items-center gap-1">
+                                <span className="text-slate-400 text-[10px]">Qtd:</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={it.quantity}
+                                  onChange={(e) =>
+                                    handleEditItemQuantityChange(
+                                      idx,
+                                      parseInt(e.target.value, 10) || 1
+                                    )
+                                  }
+                                  className="w-14 px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-center font-bold"
+                                />
+                              </div>
+
+                              <span className="font-black text-slate-900 dark:text-white w-20 text-right">
+                                {formatBRL(it.quantity * it.unitPrice)}
+                              </span>
+
+                              <button
+                                type="button"
+                                onClick={() => handleEditRemoveItem(idx)}
+                                className="text-red-500 hover:text-red-700 p-1"
+                                title="Remover item do pedido"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Desconto */}
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-4">
+                  <div>
+                    <span className="font-bold text-slate-800 dark:text-slate-200 block text-xs">
+                      Desconto Concedido (R$)
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      Subtotal dos itens: <strong>{formatBRL(editSubtotal)}</strong>
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-500">R$ Desconto:</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editDiscount}
+                      onChange={(e) => setEditDiscount(e.target.value)}
+                      className="w-28 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-rose-600 text-right text-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Totalizador */}
+                <div className="p-4 bg-gradient-to-br from-rose-500/10 to-indigo-500/10 border-2 border-rose-500/30 rounded-2xl flex justify-between items-center">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-slate-500 block">
+                      Novo Total da Venda
+                    </span>
+                    <p className="text-[11px] text-slate-500">
+                      O título a vencer e o estoque serão recalculados.
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-2xl font-black text-rose-600 dark:text-rose-400">
+                      {formatBRL(editTotalSale)}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={() => setEditingOrder(null)}
+                    className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={editItems.length === 0 || isSubmitting}
+                    className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {isSubmitting ? "Salvando Alterações..." : "Salvar Alterações do Pedido"}
+                  </button>
+                </div>
+              </form>
             </div>
-
-            <form onSubmit={handleConfirmEdit} className="space-y-4 text-xs sm:text-sm">
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
-                  Cliente
-                </label>
-                <input
-                  type="text"
-                  disabled
-                  value={editingOrder.customer?.name || "Consumidor Avulso"}
-                  className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 font-semibold cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
-                  Canal de Venda
-                </label>
-                <input
-                  type="text"
-                  value={editChannel}
-                  onChange={(e) => setEditChannel(e.target.value)}
-                  placeholder="Ex: Balcão, Instagram, WhatsApp, Feira"
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
-                  Desconto Concedido (R$)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={editDiscount}
-                  onChange={(e) => setEditDiscount(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-rose-600"
-                />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  O valor total da venda e do título a vencer pendente serão recalculados automaticamente.
-                </span>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setEditingOrder(null)}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md disabled:opacity-50"
-                >
-                  {isSubmitting ? "Salvando..." : "Salvar Alterações"}
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
