@@ -125,9 +125,14 @@ export async function PUT(req: NextRequest) {
         data: { status: "ATIVO" },
       });
 
-      // Cria a conta a receber da taxa de instalação ou da primeira mensalidade
+      // Verifica se já existe um título financeiro gerado para este contrato (evita duplicidade)
+      const existingReceivable = await db.accountReceivable.findFirst({
+        where: { contractId: contract.id },
+      });
+
+      // Só cria a conta a receber da adesão/primeira mensalidade se ainda não existir
       const fee = Number(contract.installationFee || contract.monthlyFee || contract.totalAmount);
-      if (fee > 0) {
+      if (fee > 0 && !existingReceivable) {
         const costCenter = await db.costCenter.findFirst({
           where: { code: "SISTEMAS" },
         }) || await db.costCenter.findFirst();

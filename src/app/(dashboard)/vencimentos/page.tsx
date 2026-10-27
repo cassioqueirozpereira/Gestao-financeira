@@ -22,13 +22,18 @@ export default function VencimentosPage() {
   const [loading, setLoading] = useState(true);
   const [filterMode, setFilterMode] = useState<"TODOS" | "ATRASADOS" | "PROX_7" | "RECEBIDOS">("TODOS");
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // Modal Baixa
+  // Modal Baixa Individual
   const [settleModal, setSettleModal] = useState<any | null>(null);
   const [receivedAmount, setReceivedAmount] = useState("");
   const [receivedAt, setReceivedAt] = useState(new Date().toISOString().split("T")[0]);
   const [bankAccountId, setBankAccountId] = useState("");
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Modal Baixa em Lote
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
 
   const fetchTitles = async () => {
     try {
@@ -39,9 +44,10 @@ export default function VencimentosPage() {
 
       const resBanks = await fetch("/api/bancos");
       const dataBanks = await resBanks.json();
-      if (dataBanks.accounts) {
-        setBankAccounts(dataBanks.accounts);
-        if (dataBanks.accounts.length > 0) setBankAccountId(dataBanks.accounts[0].id);
+      const accountsList = dataBanks.bankAccounts || dataBanks.accounts || [];
+      if (accountsList.length > 0) {
+        setBankAccounts(accountsList);
+        setBankAccountId((prev) => (prev ? prev : accountsList[0].id));
       }
     } catch {
       setFeedback("Erro ao carregar títulos.");
@@ -57,6 +63,7 @@ export default function VencimentosPage() {
   const handleSettleTitle = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!settleModal) return;
+    setIsSubmitting(true);
     try {
       const res = await fetch("/api/vencimentos", {
         method: "POST",
@@ -79,10 +86,48 @@ export default function VencimentosPage() {
             : t
         )
       );
+      setSelectedIds((prev) => prev.filter((id) => id !== settleModal.id));
       setSettleModal(null);
       setFeedback("Título liquidado com sucesso!");
     } catch (err: any) {
       alert(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleBatchSettle = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedIds.length === 0) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/vencimentos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "batch_settle",
+          titleIds: selectedIds,
+          receivedAt,
+          bankAccountId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao baixar títulos em lote");
+
+      setTitles(
+        titles.map((t) =>
+          selectedIds.includes(t.id)
+            ? { ...t, status: "RECEBIDA", receivedAmount: Number(t.originalAmount), receivedAt }
+            : t
+        )
+      );
+      setFeedback(`${data.count || selectedIds.length} títulos baixados em lote com sucesso!`);
+      setSelectedIds([]);
+      setBatchModalOpen(false);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -278,10 +323,65 @@ export default function VencimentosPage() {
 
       {/* Tabela de Títulos */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+        {selectedIds.length > 0 && (
+          <div className="bg-indigo-50 dark:bg-indigo-950/60 border-b border-indigo-200 dark:border-indigo-900 px-5 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-indigo-900 dark:text-indigo-200">
+              <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span>
+                <strong>{selectedIds.length}</strong> {selectedIds.length === 1 ? "título selecionado" : "títulos selecionados"} — Total:{" "}
+                <strong>
+                  {formatBRL(
+                    titles
+                      .filter((t) => selectedIds.includes(t.id))
+                      .reduce((sum, t) => sum + Number(t.originalAmount || 0), 0)
+                  )}
+                </strong>
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectedIds([])}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition"
+              >
+                Desmarcar Todos
+              </button>
+              <button
+                onClick={() => setBatchModalOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Baixar Selecionados em Lote
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs sm:text-sm">
             <thead className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
               <tr>
+                <th className="px-4 py-3.5 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    checked={
+                      filteredTitles.filter((t) => t.status !== "RECEBIDA").length > 0 &&
+                      filteredTitles
+                        .filter((t) => t.status !== "RECEBIDA")
+                        .every((t) => selectedIds.includes(t.id))
+                    }
+                    onChange={(e) => {
+                      const pendingTitles = filteredTitles.filter((t) => t.status !== "RECEBIDA");
+                      if (e.target.checked) {
+                        const newSelected = Array.from(new Set([...selectedIds, ...pendingTitles.map((t) => t.id)]));
+                        setSelectedIds(newSelected);
+                      } else {
+                        const pendingIds = new Set(pendingTitles.map((t) => t.id));
+                        setSelectedIds(selectedIds.filter((id) => !pendingIds.has(id)));
+                      }
+                    }}
+                  />
+                </th>
                 <th className="px-5 py-3.5">Cliente</th>
                 <th className="px-5 py-3.5">Título / Descrição</th>
                 <th className="px-5 py-3.5">Forma</th>
@@ -294,7 +394,7 @@ export default function VencimentosPage() {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {filteredTitles.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-10 text-slate-400">
+                  <td colSpan={8} className="text-center py-10 text-slate-400">
                     Nenhum título encontrado com o filtro selecionado.
                   </td>
                 </tr>
@@ -306,6 +406,7 @@ export default function VencimentosPage() {
                   const diffTime = dueDate.getTime() - now.getTime();
                   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
                   const isOverdue = !isReceived && diffDays < 0;
+                  const isSelected = selectedIds.includes(t.id);
 
                   // Template mensagem WhatsApp de cobrança / lembrete
                   const clientPhone = t.customer?.phone ? t.customer.phone.replace(/\D/g, "") : "";
@@ -320,8 +421,26 @@ export default function VencimentosPage() {
                   return (
                     <tr
                       key={t.id}
-                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                      className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors ${
+                        isSelected ? "bg-indigo-50/40 dark:bg-indigo-950/20" : ""
+                      }`}
                     >
+                      <td className="px-4 py-4 w-10 text-center">
+                        <input
+                          type="checkbox"
+                          disabled={isReceived}
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedIds([...selectedIds, t.id]);
+                            } else {
+                              setSelectedIds(selectedIds.filter((id) => id !== t.id));
+                            }
+                          }}
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-30 cursor-pointer"
+                        />
+                      </td>
+
                       <td className="px-5 py-4">
                         <div className="font-bold text-slate-900 dark:text-white">
                           {t.customer?.name || "Consumidor Avulso"}
@@ -403,6 +522,9 @@ export default function VencimentosPage() {
                             onClick={() => {
                               setSettleModal(t);
                               setReceivedAmount(String(t.originalAmount));
+                              if (!bankAccountId && bankAccounts.length > 0) {
+                                setBankAccountId(bankAccounts[0].id);
+                              }
                             }}
                             className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
                             title="Dar baixa no título"
@@ -421,7 +543,7 @@ export default function VencimentosPage() {
         </div>
       </div>
 
-      {/* Modal - Baixa de Título */}
+      {/* Modal - Baixa de Título Individual */}
       {settleModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
@@ -469,11 +591,15 @@ export default function VencimentosPage() {
                     onChange={(e) => setBankAccountId(e.target.value)}
                     className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
                   >
-                    {bankAccounts.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {b.bankName} - {b.accountNumber}
-                      </option>
-                    ))}
+                    {bankAccounts.length === 0 ? (
+                      <option value="">Nenhuma conta cadastrada</option>
+                    ) : (
+                      bankAccounts.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.bankName} {b.accountNumber ? `(${b.accountNumber})` : ""} - {b.holderName}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
               </div>
@@ -488,9 +614,91 @@ export default function VencimentosPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md disabled:opacity-50"
                 >
-                  Confirmar Baixa
+                  {isSubmitting ? "Baixando..." : "Confirmar Baixa"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Baixa em Lote */}
+      {batchModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1">
+              Baixa de Títulos em Lote
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Você está prestes a liquidar <strong>{selectedIds.length}</strong> títulos de clientes.
+            </p>
+
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 rounded-xl mb-4">
+              <span className="text-[11px] font-semibold text-emerald-800 dark:text-emerald-300 block">
+                Valor Total Liquidado:
+              </span>
+              <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                {formatBRL(
+                  titles
+                    .filter((t) => selectedIds.includes(t.id))
+                    .reduce((sum, t) => sum + Number(t.originalAmount || 0), 0)
+                )}
+              </span>
+            </div>
+
+            <form onSubmit={handleBatchSettle} className="space-y-4 text-xs sm:text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Data do Recebimento *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={receivedAt}
+                    onChange={(e) => setReceivedAt(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Conta Bancária de Destino
+                  </label>
+                  <select
+                    value={bankAccountId}
+                    onChange={(e) => setBankAccountId(e.target.value)}
+                    className="w-full px-2 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  >
+                    {bankAccounts.length === 0 ? (
+                      <option value="">Nenhuma conta cadastrada</option>
+                    ) : (
+                      bankAccounts.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.bankName} {b.accountNumber ? `(${b.accountNumber})` : ""} - {b.holderName}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setBatchModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md disabled:opacity-50"
+                >
+                  {isSubmitting ? "Processando..." : "Confirmar Baixa em Lote"}
                 </button>
               </div>
             </form>

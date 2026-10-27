@@ -13,6 +13,7 @@ import {
   X,
   DollarSign,
   Package,
+  Plus,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -25,8 +26,19 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  // Form states de criação
+  const [createName, setCreateName] = useState("");
+  const [createCategory, setCreateCategory] = useState("VELAS_NORMAIS_COLORIDAS");
+  const [createBasePrice, setCreateBasePrice] = useState("35.00");
+  const [createCost, setCreateCost] = useState("15.00");
+  const [createMargin, setCreateMargin] = useState("50");
+  const [createStock, setCreateStock] = useState("10");
+  const [createMinStock, setCreateMinStock] = useState("5");
+  const [createDescription, setCreateDescription] = useState("");
 
   // Form states de edição do produto
   const [name, setName] = useState("");
@@ -102,6 +114,46 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
     }
   };
 
+  const handleCreateProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createName.trim()) {
+      alert("Informe o nome do item");
+      return;
+    }
+    setLoading(true);
+
+    try {
+      const res = await fetch("/api/catalogo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: createName,
+          category: createCategory,
+          basePrice: parseFloat(createBasePrice) || 0,
+          calculatedCost: parseFloat(createCost) || 0,
+          desiredMargin: parseFloat(createMargin) || 30,
+          stockQuantity: parseInt(createStock, 10) || 0,
+          minStockQuantity: parseInt(createMinStock, 10) || 5,
+          description: createDescription,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao criar item");
+
+      setProducts([...products, data.product]);
+      setShowCreateModal(false);
+      setCreateName("");
+      setCreateDescription("");
+      setFeedback(`Item "${data.product.name}" adicionado ao catálogo com sucesso!`);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
@@ -114,6 +166,19 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+          Total no Catálogo: {products.length} itens cadastrados
+        </span>
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
+        >
+          <Plus className="w-4 h-4" />
+          Novo Item no Catálogo
+        </button>
+      </div>
+
       {feedback && (
         <div className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-300 rounded-xl text-xs flex justify-between items-center">
           <div className="flex items-center gap-2">
@@ -380,6 +445,152 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md"
                 >
                   Salvar Preço Oficial
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Cadastrar Novo Item no Catálogo (Item 5) */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-indigo-600" />
+                Cadastrar Novo Item no Catálogo
+              </h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateProduct} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Nome do Produto / Modelo *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: Vela Aromática Lavanda Francesa 180g"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Categoria Oficial *
+                </label>
+                <select
+                  value={createCategory}
+                  onChange={(e) => setCreateCategory(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
+                >
+                  {Object.entries(categoryLabels).map(([catKey, catLabel]) => (
+                    <option key={catKey} value={catKey}>
+                      {catLabel}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Preço de Venda (R$) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={createBasePrice}
+                    onChange={(e) => setCreateBasePrice(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-extrabold text-indigo-600"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Custo Unitário Estimado (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={createCost}
+                    onChange={(e) => setCreateCost(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Margem (%)
+                  </label>
+                  <input
+                    type="number"
+                    value={createMargin}
+                    onChange={(e) => setCreateMargin(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-center"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Estoque Inicial (un)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={createStock}
+                    onChange={(e) => setCreateStock(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-center"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Estoque Mínimo
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={createMinStock}
+                    onChange={(e) => setCreateMinStock(e.target.value)}
+                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-center"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Descrição do Item
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Aroma, composição, detalhes e características do produto"
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md"
+                >
+                  {loading ? "Cadastrando..." : "Cadastrar Produto"}
                 </button>
               </div>
             </form>

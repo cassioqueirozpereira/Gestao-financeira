@@ -22,9 +22,18 @@ export function InvestmentsClientView({ initialRecovery }: InvestmentsClientView
   const percentage = totalInvested > 0 ? (recovered / totalInvested) * 100 : 0;
 
   // Form
+  const [newInitialCapital, setNewInitialCapital] = useState(String(initialCap));
   const [newRecovered, setNewRecovered] = useState(String(recovered));
   const [newAports, setNewAports] = useState(String(aports));
   const [notes, setNotes] = useState(recovery?.notes || "");
+
+  const handleOpenModal = () => {
+    setNewInitialCapital(String(recovery?.initialCapital || 1600.0));
+    setNewRecovered(String(recovery?.recoveredAmount || 0));
+    setNewAports(String(recovery?.additionalAports || 0));
+    setNotes(recovery?.notes || "");
+    setShowModal(true);
+  };
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +44,7 @@ export function InvestmentsClientView({ initialRecovery }: InvestmentsClientView
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          initialCapital: parseFloat(newInitialCapital) || 0,
           recoveredAmount: parseFloat(newRecovered) || 0,
           additionalAports: parseFloat(newAports) || 0,
           notes,
@@ -71,11 +81,11 @@ export function InvestmentsClientView({ initialRecovery }: InvestmentsClientView
 
       <div className="flex justify-end">
         <button
-          onClick={() => setShowModal(true)}
+          onClick={handleOpenModal}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
         >
           <Edit3 className="w-4 h-4" />
-          Registrar Retirada / Aporte de Capital
+          Editar Investimento & Recuperação
         </button>
       </div>
 
@@ -145,28 +155,39 @@ export function InvestmentsClientView({ initialRecovery }: InvestmentsClientView
               <X className="w-5 h-5" />
             </button>
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
-              Atualizar Movimentações de Capital
+              Editar Investimento & Recuperação de Capital
             </h3>
             <form onSubmit={handleUpdate} className="space-y-3.5">
               <div>
-                <label className="block font-semibold mb-1">Valor Total Efetivamente Recuperado (R$)</label>
+                <label className="block font-semibold mb-1">Capital Inicial Investido (R$)</label>
                 <input
                   type="number"
                   step="0.01"
                   required
-                  value={newRecovered}
-                  onChange={(e) => setNewRecovered(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                  value={newInitialCapital}
+                  onChange={(e) => setNewInitialCapital(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none font-bold"
                 />
               </div>
               <div>
-                <label className="block font-semibold mb-1">Aportes Adicionais (R$)</label>
+                <label className="block font-semibold mb-1">Aportes Adicionais Realizados (R$)</label>
                 <input
                   type="number"
                   step="0.01"
                   value={newAports}
                   onChange={(e) => setNewAports(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block font-semibold mb-1">Valor Total Efetivamente Recuperado / Retirado (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  required
+                  value={newRecovered}
+                  onChange={(e) => setNewRecovered(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 outline-none font-bold text-emerald-600"
                 />
               </div>
               <div>
@@ -183,7 +204,7 @@ export function InvestmentsClientView({ initialRecovery }: InvestmentsClientView
                   Cancelar
                 </button>
                 <button type="submit" disabled={loading} className="px-4 py-1.5 bg-indigo-600 text-white font-semibold rounded-xl">
-                  {loading ? "Salvando..." : "Confirmar Alterações"}
+                  {loading ? "Salvando..." : "Salvar Alterações"}
                 </button>
               </div>
             </form>

@@ -17,6 +17,10 @@ import {
   Eye,
   Calendar,
   Sparkles,
+  Search,
+  Phone,
+  Mail,
+  ArrowRight,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -32,10 +36,32 @@ export function ContractsClientView({
   customers,
 }: ContractsClientViewProps) {
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState<"CONTRATOS" | "CLIENTES">("CONTRATOS");
   const [contracts, setContracts] = useState(initialContracts);
+  const [customerList, setCustomerList] = useState(customers);
+  const [clientSearch, setClientSearch] = useState("");
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
+
   const [showModal, setShowModal] = useState(false);
   const [editingContract, setEditingContract] = useState<any | null>(null);
   const [detailsContract, setDetailsContract] = useState<any | null>(null);
+
+  // Cliente Modal State
+  const [showClientModal, setShowClientModal] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
+  const [clientForm, setClientForm] = useState({
+    name: "",
+    documentNumber: "",
+    email: "",
+    phone: "",
+    address: "",
+    paymentMethod: "PIX",
+    monthlyFee: "0",
+    billingDay: "10",
+    notes: "",
+  });
+  const [generatingFeeId, setGeneratingFeeId] = useState<string | null>(null);
+
   const [feedback, setFeedback] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -143,10 +169,12 @@ export function ContractsClientView({
   };
 
   const handleEfetivar = async (ct: any) => {
+    if (actionLoading[ct.id]) return;
     if (!confirm(`Deseja EFETIVAR o contrato ${ct.contractNumber}? O status passará para ATIVO e será gerado automaticamente o primeiro título a vencer para o cliente.`)) {
       return;
     }
 
+    setActionLoading((prev) => ({ ...prev, [ct.id]: true }));
     try {
       const res = await fetch("/api/contratos", {
         method: "PUT",
@@ -164,6 +192,110 @@ export function ContractsClientView({
       router.refresh();
     } catch (err: any) {
       alert(err.message);
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [ct.id]: false }));
+    }
+  };
+
+  const handleOpenNewClient = () => {
+    setEditingCustomer(null);
+    setClientForm({
+      name: "",
+      documentNumber: "",
+      email: "",
+      phone: "",
+      address: "",
+      paymentMethod: "PIX",
+      monthlyFee: "250.00",
+      billingDay: "10",
+      notes: "",
+    });
+    setShowClientModal(true);
+  };
+
+  const handleOpenEditClient = (cust: any) => {
+    setEditingCustomer(cust);
+    setClientForm({
+      name: cust.name || "",
+      documentNumber: cust.documentNumber || "",
+      email: cust.email || "",
+      phone: cust.phone || "",
+      address: cust.address || "",
+      paymentMethod: cust.paymentMethod || "PIX",
+      monthlyFee: String(cust.monthlyFee || 0),
+      billingDay: String(cust.billingDay || 10),
+      notes: cust.notes || "",
+    });
+    setShowClientModal(true);
+  };
+
+  const handleSaveClient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const isEdit = !!editingCustomer;
+      const res = await fetch("/api/clientes", {
+        method: isEdit ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingCustomer?.id,
+          ...clientForm,
+          monthlyFee: parseFloat(clientForm.monthlyFee) || 0,
+          billingDay: parseInt(clientForm.billingDay, 10) || 10,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao salvar cliente");
+
+      if (isEdit) {
+        setCustomerList(customerList.map((c) => (c.id === data.id ? { ...c, ...data } : c)));
+        setFeedback(`Cliente "${data.name}" atualizado com sucesso!`);
+      } else {
+        setCustomerList([data, ...customerList]);
+        setFeedback(`Cliente "${data.name}" cadastrado com sucesso!`);
+      }
+      setShowClientModal(false);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateFee = async (cust: any) => {
+    const feeVal = Number(cust.monthlyFee || 0);
+    if (feeVal <= 0) {
+      alert("Este cliente não possui valor de mensalidade cadastrado.");
+      return;
+    }
+
+    if (!confirm(`Gerar título financeiro de mensalidade no valor de ${formatBRL(feeVal)} para "${cust.name}"?`)) {
+      return;
+    }
+
+    setGeneratingFeeId(cust.id);
+    try {
+      const res = await fetch("/api/clientes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate_monthly_fee",
+          customerId: cust.id,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao gerar mensalidade");
+
+      setFeedback(`Título de mensalidade de ${formatBRL(feeVal)} emitido no Contas a Receber para ${cust.name}!`);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setGeneratingFeeId(null);
     }
   };
 
@@ -172,17 +304,31 @@ export function ContractsClientView({
 
   return (
     <div className="space-y-5">
-      {/* Top Action */}
-      <div className="flex justify-between items-center">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-          Total de Contratos: {contracts.length}
-        </span>
+      {/* Abas Unificadas: Contratos e Clientes & Mensalidades (Item 2) */}
+      <div className="flex border-b border-slate-200 dark:border-slate-800 gap-4">
         <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
+          type="button"
+          onClick={() => setActiveTab("CONTRATOS")}
+          className={`pb-3 px-1 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition ${
+            activeTab === "CONTRATOS"
+              ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+              : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+          }`}
         >
-          <Plus className="w-4 h-4" />
-          Gerar Novo Contrato
+          <FileText className="w-4 h-4" />
+          Contratos Emitidos ({contracts.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("CLIENTES")}
+          className={`pb-3 px-1 text-xs sm:text-sm font-bold flex items-center gap-2 border-b-2 transition ${
+            activeTab === "CLIENTES"
+              ? "border-indigo-600 text-indigo-600 dark:text-indigo-400"
+              : "border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          Clientes & Mensalidades ({customerList.length})
         </button>
       </div>
 
@@ -193,123 +339,274 @@ export function ContractsClientView({
         </div>
       )}
 
-      {/* Lista de Contratos */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs sm:text-sm">
-            <thead className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
-              <tr>
-                <th className="px-5 py-3.5">Número & Título</th>
-                <th className="px-5 py-3.5">Cliente</th>
-                <th className="px-5 py-3.5">Forma & Dia</th>
-                <th className="px-5 py-3.5">Mensalidade</th>
-                <th className="px-5 py-3.5">Valor Global</th>
-                <th className="px-5 py-3.5">Situação</th>
-                <th className="px-5 py-3.5 text-right">Ações</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {contracts.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="text-center py-10 text-slate-400">
-                    Nenhum contrato gerado ainda. Clique em "Gerar Novo Contrato" para começar.
-                  </td>
-                </tr>
-              ) : (
-                contracts.map((ct) => {
-                  const isAtivo = ct.status === "ATIVO";
+      {/* ABA 1: CONTRATOS */}
+      {activeTab === "CONTRATOS" && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+              Total de Contratos: {contracts.length}
+            </span>
+            <button
+              onClick={() => setShowModal(true)}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
+            >
+              <Plus className="w-4 h-4" />
+              Gerar Novo Contrato
+            </button>
+          </div>
 
-                  return (
-                    <tr
-                      key={ct.id}
-                      className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
-                    >
-                      <td className="px-5 py-4">
-                        <div className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5" />
-                          {ct.contractNumber}
-                        </div>
-                        <div className="text-slate-800 dark:text-slate-200 font-medium text-xs mt-0.5">
-                          {ct.title}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <div className="font-semibold text-slate-900 dark:text-white">
-                          {ct.customer?.name || "Cliente Não Informado"}
-                        </div>
-                        <div className="text-[10px] text-slate-400">
-                          {ct.company?.name || "Empresa"}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <span className="px-2 py-0.5 rounded font-semibold text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                          {ct.paymentMethod || "BOLETO"}
-                        </span>
-                        <div className="text-[10px] text-slate-400 mt-1">
-                          Vence todo dia {ct.billingDay || 10}
-                        </div>
-                      </td>
-
-                      <td className="px-5 py-4 font-bold text-slate-900 dark:text-white">
-                        {ct.monthlyFee ? formatBRL(Number(ct.monthlyFee)) : "—"}
-                      </td>
-
-                      <td className="px-5 py-4 font-extrabold text-slate-900 dark:text-white">
-                        {formatBRL(Number(ct.totalAmount))}
-                      </td>
-
-                      <td className="px-5 py-4">
-                        <span
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                            isAtivo
-                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
-                              : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
-                          }`}
-                        >
-                          {ct.status}
-                        </span>
-                      </td>
-
-                      <td className="px-5 py-4 text-right space-x-2">
-                        <button
-                          onClick={() => setDetailsContract(ct)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200"
-                          title="Ver Detalhes do Contrato e Títulos"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          <span>Detalhes</span>
-                        </button>
-
-                        {!isAtivo && (
-                          <button
-                            onClick={() => handleEfetivar(ct)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
-                            title="Efetivar contrato e gerar primeiro título"
-                          >
-                            <CheckSquare className="w-3.5 h-3.5" />
-                            <span>Efetivar</span>
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => handleOpenEdit(ct)}
-                          className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition"
-                          title="Editar contrato após o lançamento"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                          <span>Editar</span>
-                        </button>
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
+                  <tr>
+                    <th className="px-5 py-3.5">Número & Título</th>
+                    <th className="px-5 py-3.5">Cliente</th>
+                    <th className="px-5 py-3.5">Forma & Dia</th>
+                    <th className="px-5 py-3.5">Mensalidade</th>
+                    <th className="px-5 py-3.5">Valor Global</th>
+                    <th className="px-5 py-3.5">Situação</th>
+                    <th className="px-5 py-3.5 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {contracts.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-10 text-slate-400">
+                        Nenhum contrato gerado ainda. Clique em "Gerar Novo Contrato" para começar.
                       </td>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                  ) : (
+                    contracts.map((ct) => {
+                      const isAtivo = ct.status === "ATIVO";
+
+                      return (
+                        <tr
+                          key={ct.id}
+                          className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition-colors"
+                        >
+                          <td className="px-5 py-4">
+                            <div className="font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                              <FileText className="w-3.5 h-3.5" />
+                              {ct.contractNumber}
+                            </div>
+                            <div className="text-slate-800 dark:text-slate-200 font-medium text-xs mt-0.5">
+                              {ct.title}
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <div className="font-semibold text-slate-900 dark:text-white">
+                              {ct.customer?.name || "Cliente Não Informado"}
+                            </div>
+                            <div className="text-[10px] text-slate-400">
+                              {ct.company?.name || "Empresa"}
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <span className="px-2 py-0.5 rounded font-semibold text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                              {ct.paymentMethod || "BOLETO"}
+                            </span>
+                            <div className="text-[10px] text-slate-400 mt-1">
+                              Vence todo dia {ct.billingDay || 10}
+                            </div>
+                          </td>
+
+                          <td className="px-5 py-4 font-bold text-slate-900 dark:text-white">
+                            {ct.monthlyFee ? formatBRL(Number(ct.monthlyFee)) : "—"}
+                          </td>
+
+                          <td className="px-5 py-4 font-extrabold text-slate-900 dark:text-white">
+                            {formatBRL(Number(ct.totalAmount))}
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                                isAtivo
+                                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                                  : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                              }`}
+                            >
+                              {ct.status}
+                            </span>
+                          </td>
+
+                          <td className="px-5 py-4 text-right space-x-2">
+                            <button
+                              onClick={() => setDetailsContract(ct)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200"
+                              title="Ver Detalhes do Contrato e Títulos"
+                            >
+                              <Eye className="w-3.5 h-3.5" />
+                              <span>Detalhes</span>
+                            </button>
+
+                            {!isAtivo && (
+                              <button
+                                onClick={() => handleEfetivar(ct)}
+                                disabled={actionLoading[ct.id]}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition disabled:opacity-50"
+                                title="Efetivar contrato e gerar primeiro título"
+                              >
+                                <CheckSquare className="w-3.5 h-3.5" />
+                                <span>{actionLoading[ct.id] ? "Efetivando..." : "Efetivar"}</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleOpenEdit(ct)}
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition"
+                              title="Editar contrato após o lançamento"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span>Editar</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ABA 2: CLIENTES & MENSALIDADES (Item 2) */}
+      {activeTab === "CLIENTES" && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+            <div className="relative w-full sm:w-72">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Buscar cliente por nome ou documento..."
+                value={clientSearch}
+                onChange={(e) => setClientSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm focus:outline-none"
+              />
+            </div>
+            <button
+              onClick={handleOpenNewClient}
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              Novo Cliente & Mensalidade
+            </button>
+          </div>
+
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="bg-slate-100 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 uppercase text-[10px] tracking-wider font-semibold">
+                  <tr>
+                    <th className="px-5 py-3.5">Cliente</th>
+                    <th className="px-5 py-3.5">Contato</th>
+                    <th className="px-5 py-3.5 font-bold">Mensalidade Recorrente</th>
+                    <th className="px-5 py-3.5">Vencimento</th>
+                    <th className="px-5 py-3.5">Forma</th>
+                    <th className="px-5 py-3.5">Contratos</th>
+                    <th className="px-5 py-3.5 text-right">Ações Rápidas</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {customerList
+                    .filter(
+                      (c) =>
+                        c.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
+                        (c.documentNumber && c.documentNumber.includes(clientSearch))
+                    )
+                    .map((c) => {
+                      const fee = Number(c.monthlyFee || 0);
+                      const isGenerating = generatingFeeId === c.id;
+
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                          <td className="px-5 py-4">
+                            <div className="font-bold text-slate-900 dark:text-white">
+                              {c.name}
+                            </div>
+                            {c.documentNumber && (
+                              <div className="text-[11px] text-slate-400">Doc: {c.documentNumber}</div>
+                            )}
+                          </td>
+
+                          <td className="px-5 py-4">
+                            {c.phone && (
+                              <div className="flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300">
+                                <Phone className="w-3 h-3 text-emerald-500" />
+                                {c.phone}
+                              </div>
+                            )}
+                            {c.email && (
+                              <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
+                                <Mail className="w-3 h-3" />
+                                {c.email}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="px-5 py-4 font-black text-slate-900 dark:text-white text-base">
+                            {fee > 0 ? (
+                              formatBRL(fee)
+                            ) : (
+                              <span className="text-xs font-normal text-slate-400 italic">Sem mensalidade</span>
+                            )}
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              Dia {c.billingDay || 10}
+                            </span>
+                            <div className="text-[10px] text-slate-400">de cada mês</div>
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <span className="px-2 py-0.5 rounded font-semibold text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                              {c.paymentMethod || "PIX"}
+                            </span>
+                          </td>
+
+                          <td className="px-5 py-4">
+                            <span className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">
+                              {c.contracts ? c.contracts.length : 0} contrato(s)
+                            </span>
+                          </td>
+
+                          <td className="px-5 py-4 text-right space-x-2 whitespace-nowrap">
+                            {fee > 0 && (
+                              <button
+                                onClick={() => handleGenerateFee(c)}
+                                disabled={isGenerating}
+                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition disabled:opacity-50"
+                                title="Emitir título a vencer da mensalidade no Contas a Receber"
+                              >
+                                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                                <span>{isGenerating ? "Emitindo..." : "Gerar Mensalidade"}</span>
+                              </button>
+                            )}
+
+                            <button
+                              onClick={() => handleOpenEditClient(c)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition"
+                              title="Editar cliente e valor da mensalidade"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>Editar</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal - Geração de Contrato */}
       {showModal && (
@@ -704,6 +1001,172 @@ export function ContractsClientView({
                 Fechar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Cadastro e Edição de Cliente & Mensalidade (Item 2) */}
+      {showClientModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-800 pb-3">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Users className="w-5 h-5 text-indigo-600" />
+                {editingCustomer ? `Editar Cliente: ${editingCustomer.name}` : "Novo Cliente & Mensalidade"}
+              </h3>
+              <button onClick={() => setShowClientModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveClient} className="space-y-4 text-xs sm:text-sm">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Nome Completo / Razão Social *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={clientForm.name}
+                    onChange={(e) => setClientForm({ ...clientForm, name: e.target.value })}
+                    placeholder="Ex: João da Silva / Cassara Corp"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    CPF ou CNPJ
+                  </label>
+                  <input
+                    type="text"
+                    value={clientForm.documentNumber}
+                    onChange={(e) => setClientForm({ ...clientForm, documentNumber: e.target.value })}
+                    placeholder="000.000.000-00"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Telefone / WhatsApp
+                  </label>
+                  <input
+                    type="text"
+                    value={clientForm.phone}
+                    onChange={(e) => setClientForm({ ...clientForm, phone: e.target.value })}
+                    placeholder="(11) 99999-9999"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    E-mail
+                  </label>
+                  <input
+                    type="email"
+                    value={clientForm.email}
+                    onChange={(e) => setClientForm({ ...clientForm, email: e.target.value })}
+                    placeholder="cliente@exemplo.com"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-indigo-50/60 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-900/60 space-y-3">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-900 dark:text-indigo-300 block">
+                  Configuração de Mensalidade Recorrente
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                      Valor Mensal (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={clientForm.monthlyFee}
+                      onChange={(e) => setClientForm({ ...clientForm, monthlyFee: e.target.value })}
+                      placeholder="250.00"
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-extrabold text-indigo-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                      Dia Vencimento
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="31"
+                      value={clientForm.billingDay}
+                      onChange={(e) => setClientForm({ ...clientForm, billingDay: e.target.value })}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-center"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                      Forma Pagamento
+                    </label>
+                    <select
+                      value={clientForm.paymentMethod}
+                      onChange={(e) => setClientForm({ ...clientForm, paymentMethod: e.target.value })}
+                      className="w-full px-2.5 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                    >
+                      <option value="PIX">PIX</option>
+                      <option value="BOLETO">Boleto Bancário</option>
+                      <option value="CARTAO">Cartão de Crédito</option>
+                      <option value="TRANSFERENCIA">Transferência</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Endereço
+                </label>
+                <input
+                  type="text"
+                  value={clientForm.address}
+                  onChange={(e) => setClientForm({ ...clientForm, address: e.target.value })}
+                  placeholder="Rua, número, bairro, cidade - UF"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Observações
+                </label>
+                <textarea
+                  rows={2}
+                  value={clientForm.notes}
+                  onChange={(e) => setClientForm({ ...clientForm, notes: e.target.value })}
+                  placeholder="Informações adicionais do cliente ou serviço"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setShowClientModal(false)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md"
+                >
+                  {loading ? "Salvando..." : "Salvar Cliente"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

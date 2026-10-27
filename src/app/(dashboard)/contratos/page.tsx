@@ -32,7 +32,13 @@ export default async function ContractsPage() {
   }
 
   try {
-    customers = await db.customer.findMany();
+    customers = await db.customer.findMany({
+      include: {
+        contracts: true,
+        accountsReceivable: true,
+      },
+      orderBy: { name: "asc" },
+    });
   } catch (e) {
     console.error("Erro ao carregar clientes:", e);
   }

@@ -205,3 +205,152 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
+
+export async function PUT(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const body = await req.json();
+    const { id, action = "edit", channel, discountAmount, status } = body;
+
+    if (!id) return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+
+    const existingOrder = await db.order.findUnique({
+      where: { id },
+      include: { items: true, receivables: true },
+    });
+    if (!existingOrder) return NextResponse.json({ error: "Venda não encontrada" }, { status: 404 });
+
+    // AÇÃO 1: INATIVAR / CANCELAR VENDA (E DEVOLVER ITENS AO ESTOQUE)
+    if (action === "inactivate" || status === "CANCELADO") {
+      if (existingOrder.status === "CANCELADO") {
+        return NextResponse.json({ error: "Esta venda já está cancelada/inativada" }, { status: 400 });
+      }
+
+      // Restaura o estoque de cada produto vendido
+      for (const item of existingOrder.items) {
+        await db.product.update({
+          where: { id: item.productId },
+          data: {
+            stockQuantity: { increment: item.quantity },
+          },
+        });
+      }
+
+      // Cancela o título a receber vinculado
+      await db.accountReceivable.updateMany({
+        where: { orderId: existingOrder.id },
+        data: { status: "CANCELADA" },
+      });
+
+      // Atualiza o pedido
+      const updatedOrder = await db.order.update({
+        where: { id },
+        data: { status: "CANCELADO" },
+        include: { items: { include: { product: true } }, customer: true, receivables: true },
+      });
+
+      await logAudit({
+        userId: user.id,
+        action: "STATUS_CHANGE",
+        entity: "Order",
+        entityId: id,
+        newValues: { status: "CANCELADO" },
+        ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+        description: `Inativação da venda ${existingOrder.orderNumber} e devolução dos itens ao estoque`,
+      });
+
+      return NextResponse.json({ success: true, order: updatedOrder });
+    }
+
+    // AÇÃO 2: EDITAR VENDA (Canal, Desconto)
+    const subtotal = existingOrder.items.reduce((s, it) => s + Number(it.totalPrice), 0);
+    const newDiscount = discountAmount !== undefined ? parseFloat(discountAmount) : Number(existingOrder.discountAmount);
+    const newTotal = Math.max(0, subtotal - newDiscount);
+
+    const updatedOrder = await db.order.update({
+      where: { id },
+      data: {
+        channel: channel !== undefined ? channel : existingOrder.channel,
+        discountAmount: newDiscount,
+        totalAmount: newTotal,
+      },
+      include: { items: { include: { product: true } }, customer: true, receivables: true },
+    });
+
+    // Se o valor total mudou e há conta a receber pendente, atualiza o valor do título
+    if (existingOrder.receivables.length > 0) {
+      await db.accountReceivable.updateMany({
+        where: { orderId: existingOrder.id, status: "A_RECEBER" },
+        data: { originalAmount: newTotal },
+      });
+    }
+
+    await logAudit({
+      userId: user.id,
+      action: "UPDATE",
+      entity: "Order",
+      entityId: id,
+      newValues: { totalAmount: newTotal, discountAmount: newDiscount, channel },
+      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+      description: `Edição dos dados da venda ${existingOrder.orderNumber}`,
+    });
+
+    return NextResponse.json({ success: true, order: updatedOrder });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id");
+    if (!id) return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
+
+    const order = await db.order.findUnique({
+      where: { id },
+      include: { items: true },
+    });
+    if (!order) return NextResponse.json({ error: "Venda não encontrada" }, { status: 404 });
+
+    // Se a venda não estava cancelada, restaura o estoque
+    if (order.status !== "CANCELADO") {
+      for (const item of order.items) {
+        await db.product.update({
+          where: { id: item.productId },
+          data: {
+            stockQuantity: { increment: item.quantity },
+          },
+        });
+      }
+    }
+
+    // Remove contas a receber vinculadas
+    await db.accountReceivable.deleteMany({
+      where: { orderId: order.id },
+    });
+
+    await db.order.delete({
+      where: { id },
+    });
+
+    await logAudit({
+      userId: user.id,
+      action: "DELETE",
+      entity: "Order",
+      entityId: id,
+      newValues: { orderNumber: order.orderNumber },
+      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+      description: `Exclusão da venda ${order.orderNumber} e devolução dos itens ao estoque`,
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}

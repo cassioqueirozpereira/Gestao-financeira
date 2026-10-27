@@ -16,6 +16,56 @@ export async function GET() {
   }
 }
 
+export async function POST(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const body = await req.json();
+    const {
+      name,
+      category = "VELAS_NORMAIS_COLORIDAS",
+      basePrice = 0,
+      calculatedCost = 0,
+      desiredMargin = 30,
+      stockQuantity = 0,
+      minStockQuantity = 5,
+      description = "",
+    } = body;
+
+    if (!name || !name.trim()) {
+      return NextResponse.json({ error: "Nome do produto é obrigatório" }, { status: 400 });
+    }
+
+    const newProduct = await db.product.create({
+      data: {
+        name: name.trim(),
+        category,
+        basePrice: Number(basePrice) || 0,
+        calculatedCost: Number(calculatedCost) || 0,
+        desiredMargin: Number(desiredMargin) || 30,
+        stockQuantity: parseInt(stockQuantity, 10) || 0,
+        minStockQuantity: parseInt(minStockQuantity, 10) || 5,
+        description: description || null,
+      },
+    });
+
+    await logAudit({
+      userId: user.id,
+      action: "CREATE",
+      entity: "Product",
+      entityId: newProduct.id,
+      newValues: { name: newProduct.name, category: newProduct.category, basePrice: newProduct.basePrice },
+      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+      description: `Inclusão de novo item no catálogo: ${newProduct.name}`,
+    });
+
+    return NextResponse.json({ success: true, product: newProduct });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
 export async function PUT(req: NextRequest) {
   try {
     const user = await getCurrentUser();

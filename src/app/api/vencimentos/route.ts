@@ -71,6 +71,54 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, updated });
     }
 
+    if (action === "batch_settle") {
+      const { titleIds = [] } = body;
+      if (!Array.isArray(titleIds) || titleIds.length === 0) {
+        return NextResponse.json({ error: "Nenhum título selecionado para baixa" }, { status: 400 });
+      }
+
+      const paymentDate = receivedAt ? new Date(receivedAt) : new Date();
+      const titlesToSettle = await db.accountReceivable.findMany({
+        where: { id: { in: titleIds } },
+      });
+
+      let totalAmountSettled = 0;
+      for (const t of titlesToSettle) {
+        const val = Number(t.originalAmount || 0);
+        totalAmountSettled += val;
+        await db.accountReceivable.update({
+          where: { id: t.id },
+          data: {
+            status: "RECEBIDA",
+            receivedAmount: val,
+            receivedAt: paymentDate,
+            bankAccountId: bankAccountId || null,
+          },
+        });
+      }
+
+      if (bankAccountId && totalAmountSettled > 0) {
+        await db.bankAccount.update({
+          where: { id: bankAccountId },
+          data: {
+            currentBalance: { increment: totalAmountSettled },
+          },
+        });
+      }
+
+      await logAudit({
+        userId: user.id,
+        action: "STATUS_CHANGE",
+        entity: "AccountReceivable",
+        entityId: "BATCH",
+        newValues: { settledCount: titlesToSettle.length, totalAmountSettled, bankAccountId },
+        ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+        description: `Baixa em lote de ${titlesToSettle.length} títulos: R$ ${totalAmountSettled.toFixed(2)}`,
+      });
+
+      return NextResponse.json({ success: true, count: titlesToSettle.length, totalAmountSettled });
+    }
+
     return NextResponse.json({ error: "Ação inválida" }, { status: 400 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

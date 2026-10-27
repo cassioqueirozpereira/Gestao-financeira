@@ -14,6 +14,9 @@ import {
   Users,
   Search,
   Sparkles,
+  Edit2,
+  Ban,
+  X,
 } from "lucide-react";
 
 export default function VendasPage() {
@@ -31,6 +34,11 @@ export default function VendasPage() {
   const [dueDate, setDueDate] = useState(new Date().toISOString().split("T")[0]);
   const [paymentMethod, setPaymentMethod] = useState("PIX");
   const [discountAmount, setDiscountAmount] = useState("0");
+
+  // Modal Edição
+  const [editingOrder, setEditingOrder] = useState<any | null>(null);
+  const [editChannel, setEditChannel] = useState("");
+  const [editDiscount, setEditDiscount] = useState("0");
 
   // Itens da Venda
   const [items, setItems] = useState<{ productId: string; quantity: number; unitPrice: number }[]>([]);
@@ -144,6 +152,67 @@ export default function VendasPage() {
     }
   };
 
+  const handleInactivateSale = async (order: any) => {
+    if (
+      !confirm(
+        `Deseja realmente inativar/cancelar a venda ${order.orderNumber}? Os itens vendidos retornarão automaticamente ao estoque e o título no Contas a Receber será cancelado.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/vendas", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: order.id, action: "inactivate" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao inativar venda");
+
+      setOrders(orders.map((o) => (o.id === order.id ? { ...o, status: "CANCELADO" } : o)));
+      setFeedback(`Venda ${order.orderNumber} inativada com sucesso! Itens devolvidos ao estoque.`);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleOpenEdit = (order: any) => {
+    setEditingOrder(order);
+    setEditChannel(order.channel || "Balcão / Instagram");
+    setEditDiscount(String(order.discountAmount || 0));
+  };
+
+  const handleConfirmEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingOrder) return;
+    setIsSubmitting(true);
+    try {
+      const res = await fetch("/api/vendas", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingOrder.id,
+          action: "edit",
+          channel: editChannel,
+          discountAmount: parseFloat(editDiscount) || 0,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao salvar alterações");
+
+      setOrders(orders.map((o) => (o.id === editingOrder.id ? { ...o, ...data.order } : o)));
+      setEditingOrder(null);
+      setFeedback(`Venda ${data.order.orderNumber} atualizada com sucesso!`);
+      fetchData();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
@@ -247,25 +316,33 @@ export default function VendasPage() {
                 <th className="px-5 py-3.5">Cliente</th>
                 <th className="px-5 py-3.5">Itens Comprados</th>
                 <th className="px-5 py-3.5">Canal</th>
+                <th className="px-5 py-3.5">Situação</th>
                 <th className="px-5 py-3.5 font-bold">Valor Total (R$)</th>
                 <th className="px-5 py-3.5">Título a Vencer</th>
+                <th className="px-5 py-3.5 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {orders.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-10 text-slate-400">
+                  <td colSpan={8} className="text-center py-10 text-slate-400">
                     Nenhuma venda registrada ainda. Clique em "+ Nova Venda" para começar.
                   </td>
                 </tr>
               ) : (
                 orders.map((o) => {
                   const rec = o.receivables && o.receivables[0];
+                  const isCancelled = o.status === "CANCELADO";
 
                   return (
-                    <tr key={o.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                    <tr
+                      key={o.id}
+                      className={`hover:bg-slate-50/60 dark:hover:bg-slate-800/40 ${
+                        isCancelled ? "opacity-60 bg-slate-50/30 dark:bg-slate-900/30" : ""
+                      }`}
+                    >
                       <td className="px-5 py-4">
-                        <div className="font-bold text-rose-600 dark:text-rose-400">
+                        <div className={`font-bold ${isCancelled ? "text-slate-500 line-through" : "text-rose-600 dark:text-rose-400"}`}>
                           {o.orderNumber}
                         </div>
                         <div className="text-[10px] text-slate-400 mt-0.5">
@@ -296,14 +373,39 @@ export default function VendasPage() {
                         {o.channel}
                       </td>
 
-                      <td className="px-5 py-4 font-black text-slate-900 dark:text-white text-base">
-                        {formatBRL(Number(o.totalAmount))}
+                      <td className="px-5 py-4">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                            isCancelled
+                              ? "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+                              : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400"
+                          }`}
+                        >
+                          {isCancelled ? "CANCELADA / INATIVA" : "CONCLUÍDA"}
+                        </span>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className={`font-black text-slate-900 dark:text-white text-base ${isCancelled ? "line-through text-slate-400" : ""}`}>
+                          {formatBRL(Number(o.totalAmount))}
+                        </div>
+                        {Number(o.discountAmount) > 0 && (
+                          <div className="text-[10px] text-emerald-600 font-semibold">
+                            Desc: -{formatBRL(Number(o.discountAmount))}
+                          </div>
+                        )}
                       </td>
 
                       <td className="px-5 py-4">
                         {rec ? (
                           <div>
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                rec.status === "CANCELADA"
+                                  ? "bg-slate-100 text-slate-500 dark:bg-slate-800"
+                                  : "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300"
+                              }`}
+                            >
                               {rec.status}
                             </span>
                             <div className="text-[10px] text-slate-400 mt-1">
@@ -311,7 +413,33 @@ export default function VendasPage() {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-[11px] text-emerald-600 font-semibold">Liquidado</span>
+                          <span className="text-[11px] text-emerald-600 font-semibold">Sem Título / Liquidado</span>
+                        )}
+                      </td>
+
+                      <td className="px-5 py-4 text-right space-x-1 whitespace-nowrap">
+                        {!isCancelled && (
+                          <>
+                            <button
+                              onClick={() => handleOpenEdit(o)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition"
+                              title="Editar venda"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span>Editar</span>
+                            </button>
+                            <button
+                              onClick={() => handleInactivateSale(o)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-red-50 dark:bg-red-950/40 hover:bg-red-100 text-red-600 dark:text-red-400 transition"
+                              title="Inativar venda e devolver produtos ao estoque"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              <span>Inativar</span>
+                            </button>
+                          </>
+                        )}
+                        {isCancelled && (
+                          <span className="text-[11px] text-slate-400 italic">Itens devolvidos</span>
                         )}
                       </td>
                     </tr>
@@ -503,6 +631,30 @@ export default function VendasPage() {
                 )}
               </div>
 
+              {/* Campo de Desconto Promocional / Especial (Item 4) */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 flex items-center justify-between gap-4">
+                <div>
+                  <span className="font-bold text-slate-800 dark:text-slate-200 block text-xs">
+                    Desconto Especial (R$)
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    Subtotal dos itens: <strong>{formatBRL(subtotal)}</strong>
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-slate-500">R$ Desconto:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={discountAmount}
+                    onChange={(e) => setDiscountAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-28 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-rose-600 text-right text-xs"
+                  />
+                </div>
+              </div>
+
               {/* Totalizador da Venda e Emissão de Título */}
               <div className="p-4 bg-gradient-to-br from-rose-500/10 to-indigo-500/10 border-2 border-rose-500/30 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div>
@@ -540,6 +692,84 @@ export default function VendasPage() {
                   className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md disabled:opacity-50 flex items-center gap-2"
                 >
                   {isSubmitting ? "Registrando Venda..." : "Concluir Venda & Emitir Título"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Editar Venda */}
+      {editingOrder && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-rose-500" />
+                Editar Dados da Venda {editingOrder.orderNumber}
+              </h3>
+              <button onClick={() => setEditingOrder(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmEdit} className="space-y-4 text-xs sm:text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Cliente
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={editingOrder.customer?.name || "Consumidor Avulso"}
+                  className="w-full px-3 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 font-semibold cursor-not-allowed"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Canal de Venda
+                </label>
+                <input
+                  type="text"
+                  value={editChannel}
+                  onChange={(e) => setEditChannel(e.target.value)}
+                  placeholder="Ex: Balcão, Instagram, WhatsApp, Feira"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Desconto Concedido (R$)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editDiscount}
+                  onChange={(e) => setEditDiscount(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-rose-600"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  O valor total da venda e do título a vencer pendente serão recalculados automaticamente.
+                </span>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingOrder(null)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs shadow-md disabled:opacity-50"
+                >
+                  {isSubmitting ? "Salvando..." : "Salvar Alterações"}
                 </button>
               </div>
             </form>

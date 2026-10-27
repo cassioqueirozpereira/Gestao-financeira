@@ -7,6 +7,7 @@ import { logAudit } from "@/lib/audit";
 export const dynamic = "force-dynamic";
 
 const updateRecoverySchema = z.object({
+  initialCapital: z.number().min(0).optional(),
   recoveredAmount: z.number().min(0),
   additionalAports: z.number().min(0).default(0),
   notes: z.string().optional(),
@@ -33,22 +34,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Dados inválidos", details: parsed.error.format() }, { status: 400 });
     }
 
-    const { recoveredAmount, additionalAports, notes } = parsed.data;
+    const { initialCapital, recoveredAmount, additionalAports, notes } = parsed.data;
 
     let recovery = await db.capitalRecovery.findFirst();
     if (recovery) {
       recovery = await db.capitalRecovery.update({
         where: { id: recovery.id },
         data: {
+          initialCapital: initialCapital !== undefined ? initialCapital : recovery.initialCapital,
           recoveredAmount,
           additionalAports,
-          notes: notes || recovery.notes,
+          notes: notes !== undefined ? notes : recovery.notes,
         },
       });
     } else {
       recovery = await db.capitalRecovery.create({
         data: {
-          initialCapital: 1600.0,
+          initialCapital: initialCapital || 1600.0,
           recoveredAmount,
           additionalAports,
           notes: notes || "Controle do capital inicial da D.A. Com Carinho",
