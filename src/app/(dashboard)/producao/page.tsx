@@ -1,19 +1,106 @@
 import React from "react";
 import { db } from "@/lib/db";
-import { Flame, Plus, ShieldAlert, Clock, Sparkles } from "lucide-react";
+import { Flame } from "lucide-react";
 import { ProductionClientView } from "./ProductionClientView";
 
 export const dynamic = "force-dynamic";
 
 export default async function ProductionPage() {
   let productionOrders: any[] = [];
+  let products: any[] = [];
+  let rawMaterials: any[] = [];
+  let packagings: any[] = [];
+
   try {
     productionOrders = await db.productionOrder.findMany({
+      include: {
+        product: {
+          include: { categoryRef: true },
+        },
+        ingredientConsumptions: {
+          include: { rawMaterial: true },
+        },
+        packagingConsumptions: {
+          include: { packaging: true },
+        },
+      },
       orderBy: { productionDate: "desc" },
     });
   } catch (e) {
     console.error("Erro ao carregar ordens de produção:", e);
   }
+
+  try {
+    products = await db.product.findMany({
+      include: { categoryRef: true },
+      orderBy: { name: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar produtos:", e);
+  }
+
+  try {
+    rawMaterials = await db.rawMaterial.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar matérias-primas:", e);
+  }
+
+  try {
+    packagings = await db.packaging.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar embalagens:", e);
+  }
+
+  const serializedOrders = productionOrders.map((o) => ({
+    ...o,
+    materialCost: Number(o.materialCost),
+    packagingCost: Number(o.packagingCost),
+    gasCost: Number(o.gasCost),
+    energyCost: Number(o.energyCost),
+    laborCost: Number(o.laborCost),
+    totalCost: Number(o.totalCost),
+    unitCost: Number(o.unitCost),
+    productionDate: o.productionDate.toISOString(),
+    createdAt: o.createdAt.toISOString(),
+    updatedAt: o.updatedAt.toISOString(),
+    ingredientConsumptions: o.ingredientConsumptions.map((ing: any) => ({
+      ...ing,
+      quantityUsed: Number(ing.quantityUsed),
+      unitCost: Number(ing.unitCost),
+      totalCost: Number(ing.totalCost),
+    })),
+    packagingConsumptions: o.packagingConsumptions.map((p: any) => ({
+      ...p,
+      quantityUsed: Number(p.quantityUsed),
+      unitCost: Number(p.unitCost),
+      totalCost: Number(p.totalCost),
+    })),
+  }));
+
+  const serializedProducts = products.map((pr) => ({
+    ...pr,
+    basePrice: Number(pr.basePrice),
+    calculatedCost: Number(pr.calculatedCost),
+    desiredMargin: Number(pr.desiredMargin),
+  }));
+
+  const serializedRaw = rawMaterials.map((m) => ({
+    ...m,
+    currentStock: Number(m.currentStock),
+    minStock: Number(m.minStock),
+    unitCost: Number(m.unitCost),
+  }));
+
+  const serializedPack = packagings.map((p) => ({
+    ...p,
+    unitCost: Number(p.unitCost),
+  }));
 
   return (
     <div className="space-y-6">
@@ -21,15 +108,20 @@ export default async function ProductionPage() {
         <div>
           <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
             <Flame className="w-6 h-6 text-amber-500" />
-            Produção, Lotes e Custos — D.A. Com Carinho
+            Produção, Lotes e Custos Reais — D.A. Com Carinho
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Acompanhamento de custos de fabricação (matéria-prima, gás, energia elétrica e mão de obra) e histórico de lotes.
+            Ficha técnica com consumo real de cera, resinas e embalagens, cálculo do custo unitário efetivo e baixa automática no estoque.
           </p>
         </div>
       </div>
 
-      <ProductionClientView initialOrders={productionOrders} />
+      <ProductionClientView
+        initialOrders={serializedOrders}
+        products={serializedProducts}
+        rawMaterials={serializedRaw}
+        packagings={serializedPack}
+      />
     </div>
   );
 }

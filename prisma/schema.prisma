@@ -136,6 +136,7 @@ model ChartOfAccount {
   name        String
   level       Int
   type        AccountType
+  isActive    Boolean     @default(true)
   parentId    String?
   parent      ChartOfAccount?  @relation("AccountHierarchy", fields: [parentId], references: [id])
   children    ChartOfAccount[] @relation("AccountHierarchy")
@@ -282,16 +283,22 @@ model Customer {
 model Supplier {
   id             String   @id @default(uuid())
   name           String
+  tradeName      String?
   documentNumber String?
   email          String?
   phone          String?
   address        String?
   category       String?
+  notes          String?
+  isActive       Boolean  @default(true)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   accountsPayable AccountPayable[]
   debts           DebtObligation[]
+  rawMaterials    RawMaterial[]
+  packagings      Packaging[]
+  purchases       Purchase[]
 
   @@map("suppliers")
 }
@@ -379,6 +386,7 @@ model AccountPayable {
 
   allocations      CostAllocation[]
   commissions      CommissionRecord[]
+  purchases        Purchase[]       @relation("PurchaseAccountPayable")
 
   @@map("accounts_payable")
 }
@@ -642,6 +650,20 @@ model PerformanceGoal {
 // CATÁLOGO, ESTOQUE E PRODUÇÃO D.A. COM CARINHO
 // ----------------------------------------------------
 
+model Category {
+  id          String    @id @default(uuid())
+  code        String?   @unique
+  name        String    @unique
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@map("categories")
+}
+
 enum ProductCategory {
   VELAS_NORMAIS_COLORIDAS
   VELAS_DECORADAS_FLORES
@@ -654,57 +676,89 @@ enum ProductCategory {
 }
 
 model Product {
-  id          String          @id @default(uuid())
-  name        String
-  category    ProductCategory
-  weightGrams Int?
-  volumeMl    Int?
-  basePrice   Decimal
-  calculatedCost Decimal      @default(0)
-  desiredMargin  Decimal?     @default(30)
-  stockQuantity Int           @default(0)
-  minStockQuantity Int        @default(5)
-  description String?
-  photoUrl    String?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id              String          @id @default(uuid())
+  name            String
+  category        ProductCategory
+  categoryId      String?
+  categoryRef     Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  weightGrams     Int?
+  volumeMl        Int?
+  basePrice       Decimal
+  calculatedCost  Decimal         @default(0)
+  desiredMargin   Decimal?        @default(30)
+  stockQuantity   Int             @default(0)
+  minStockQuantity Int            @default(5)
+  description     String?
+  photoUrl        String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
-  technicalSheets TechnicalSheet[]
-  orderItems      OrderItem[]
+  technicalSheets  TechnicalSheet[]
+  orderItems       OrderItem[]
+  productionOrders ProductionOrder[]
 
   @@map("products")
 }
 
 model RawMaterial {
-  id          String   @id @default(uuid())
-  name        String
-  category    String
-  unit        String
-  currentStock Decimal @default(0)
-  minStock    Decimal  @default(0)
-  unitCost    Decimal  @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String    @id @default(uuid())
+  code         String?   @unique
+  name         String
+  category     String
+  unit         String
+  currentStock Decimal   @default(0)
+  minStock     Decimal   @default(0)
+  unitCost     Decimal   @default(0)
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  notes        String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  sheetItems  TechnicalSheetItem[]
+  sheetItems   TechnicalSheetItem[]
+  consumptions ProductionIngredientConsumption[]
 
   @@map("raw_materials")
 }
 
-model TechnicalSheet {
-  id          String   @id @default(uuid())
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id])
-  version     Int      @default(1)
-  gasCostEstimated Decimal @default(0.20)
-  energyCostEstimated Decimal @default(0.45)
-  laborCostEstimated Decimal @default(20.00)
-  wastePercentage Decimal @default(5.00)
-  notes       String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model Packaging {
+  id           String    @id @default(uuid())
+  code         String?   @unique
+  name         String
+  unit         String    @default("UN")
+  currentStock Int       @default(0)
+  minStock     Int       @default(10)
+  unitCost     Decimal   @default(0)
+  supplierId   String?
+  supplier     Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  notes        String?
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  items       TechnicalSheetItem[]
+  sheetPackagings TechnicalSheetPackaging[]
+  consumptions    ProductionPackagingConsumption[]
+
+  @@map("packagings")
+}
+
+model TechnicalSheet {
+  id                  String   @id @default(uuid())
+  productId           String
+  product             Product  @relation(fields: [productId], references: [id])
+  version             Int      @default(1)
+  expectedYield       Int      @default(1)
+  gasCostEstimated    Decimal  @default(0.20)
+  energyCostEstimated Decimal  @default(0.45)
+  laborCostEstimated  Decimal  @default(20.00)
+  wastePercentage     Decimal  @default(5.00)
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  items               TechnicalSheetItem[]
+  packagingItems      TechnicalSheetPackaging[]
 
   @@map("technical_sheets")
 }
@@ -721,23 +775,133 @@ model TechnicalSheetItem {
   @@map("technical_sheet_items")
 }
 
+model TechnicalSheetPackaging {
+  id               String         @id @default(uuid())
+  technicalSheetId String
+  technicalSheet   TechnicalSheet @relation(fields: [technicalSheetId], references: [id], onDelete: Cascade)
+  packagingId      String
+  packaging        Packaging      @relation(fields: [packagingId], references: [id])
+  quantity         Int            @default(1)
+  createdAt        DateTime       @default(now())
+
+  @@map("technical_sheet_packagings")
+}
+
 model ProductionOrder {
-  id             String    @id @default(uuid())
-  batchNumber    String    @unique
-  productionDate DateTime  @default(now())
-  costCenter     String
-  materialCost   Decimal   @default(0)
-  gasCost        Decimal   @default(0)
-  energyCost     Decimal   @default(0)
-  laborCost      Decimal   @default(0)
-  totalCost      Decimal   @default(0)
-  notes          String?
-  isHistorical   Boolean   @default(false)
-  isConfirmed    Boolean   @default(false)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id               String    @id @default(uuid())
+  batchNumber      String    @unique
+  productId        String?
+  product          Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+  quantityProduced Int       @default(1)
+  productionDate   DateTime  @default(now())
+  costCenter       String
+  materialCost     Decimal   @default(0)
+  packagingCost    Decimal   @default(0)
+  gasCost          Decimal   @default(0)
+  energyCost       Decimal   @default(0)
+  laborCost        Decimal   @default(0)
+  totalCost        Decimal   @default(0)
+  unitCost         Decimal   @default(0)
+  notes            String?
+  isHistorical     Boolean   @default(false)
+  isConfirmed      Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  ingredientConsumptions ProductionIngredientConsumption[]
+  packagingConsumptions  ProductionPackagingConsumption[]
 
   @@map("production_orders")
+}
+
+model ProductionIngredientConsumption {
+  id                String          @id @default(uuid())
+  productionOrderId String
+  productionOrder   ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  rawMaterialId     String
+  rawMaterial       RawMaterial     @relation(fields: [rawMaterialId], references: [id])
+  quantityUsed      Decimal
+  unit              String
+  unitCost          Decimal         @default(0)
+  totalCost         Decimal         @default(0)
+  createdAt         DateTime        @default(now())
+
+  @@map("production_ingredient_consumptions")
+}
+
+model ProductionPackagingConsumption {
+  id                String          @id @default(uuid())
+  productionOrderId String
+  productionOrder   ProductionOrder @relation(fields: [productionOrderId], references: [id], onDelete: Cascade)
+  packagingId       String
+  packaging         Packaging       @relation(fields: [packagingId], references: [id])
+  quantityUsed      Int
+  unitCost          Decimal         @default(0)
+  totalCost         Decimal         @default(0)
+  createdAt         DateTime        @default(now())
+
+  @@map("production_packaging_consumptions")
+}
+
+model StockMovement {
+  id                String    @id @default(uuid())
+  date              DateTime  @default(now())
+  itemType          String    // MATERIA_PRIMA, EMBALAGEM, PRODUTO_ACABADO
+  itemId            String
+  itemName          String
+  movementType      String    // ENTRADA, SAIDA, AJUSTE, PERDA, PRODUCAO
+  quantity          Decimal
+  unit              String
+  unitCost          Decimal   @default(0)
+  totalCost         Decimal   @default(0)
+  origin            String    // COMPRA, PRODUCAO, VENDA, INVENTARIO, PERDA, MANUAL
+  documentReference String?
+  notes             String?
+  userId            String?
+  batchNumber       String?
+  createdAt         DateTime  @default(now())
+
+  @@map("stock_movements")
+}
+
+model Purchase {
+  id               String         @id @default(uuid())
+  purchaseNumber   String         @unique
+  supplierId       String
+  supplier         Supplier       @relation(fields: [supplierId], references: [id])
+  orderDate        DateTime       @default(now())
+  deliveryDate     DateTime?
+  status           String         @default("PENDENTE_ENTREGA") // PENDENTE_ENTREGA, RECEBIDO, CANCELADO
+  totalAmount      Decimal
+  freightAmount    Decimal        @default(0)
+  invoiceNumber    String?
+  paymentStatus    String         @default("EM_ABERTO") // EM_ABERTO, PAGO, CANCELADO
+  accountPayableId String?
+  accountPayable   AccountPayable? @relation("PurchaseAccountPayable", fields: [accountPayableId], references: [id], onDelete: SetNull)
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  items            PurchaseItem[]
+
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id               String    @id @default(uuid())
+  purchaseId       String
+  purchase         Purchase  @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  itemType         String    // MATERIA_PRIMA, EMBALAGEM
+  itemId           String    // ID do RawMaterial ou Packaging
+  name             String
+  quantity         Decimal
+  unit             String
+  unitCost         Decimal
+  totalCost        Decimal
+  receivedQuantity Decimal   @default(0)
+  createdAt        DateTime  @default(now())
+
+  @@map("purchase_items")
 }
 
 // ----------------------------------------------------
@@ -866,5 +1030,20 @@ model CapitalRecovery {
   updatedAt           DateTime @updatedAt
   createdAt           DateTime @default(now())
 
+  entries             CapitalRecoveryEntry[]
+
   @@map("capital_recoveries")
+}
+
+model CapitalRecoveryEntry {
+  id                String          @id @default(uuid())
+  capitalRecoveryId String
+  capitalRecovery   CapitalRecovery @relation(fields: [capitalRecoveryId], references: [id], onDelete: Cascade)
+  receivableId      String?
+  amount            Decimal
+  date              DateTime        @default(now())
+  description       String
+  createdAt         DateTime        @default(now())
+
+  @@map("capital_recovery_entries")
 }

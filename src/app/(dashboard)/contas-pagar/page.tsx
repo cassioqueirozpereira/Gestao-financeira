@@ -8,6 +8,7 @@ export default async function AccountsPayablePage() {
   let costCenters: any[] = [];
   let bankAccounts: any[] = [];
   let accounts: any[] = [];
+  let suppliers: any[] = [];
 
   try {
     payables = await db.accountPayable.findMany({
@@ -21,6 +22,15 @@ export default async function AccountsPayablePage() {
     });
   } catch (e) {
     console.error("Erro ao carregar contas a pagar:", e);
+  }
+
+  try {
+    suppliers = await db.supplier.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar fornecedores:", e);
   }
 
   try {
@@ -72,6 +82,7 @@ export default async function AccountsPayablePage() {
         costCenters={costCenters}
         accounts={accounts}
         bankAccounts={bankAccounts}
+        suppliers={suppliers}
       />
     </div>
   );

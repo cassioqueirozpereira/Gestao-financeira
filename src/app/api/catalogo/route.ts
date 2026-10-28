@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const products = await db.product.findMany({
+      include: {
+        categoryRef: true,
+      },
       orderBy: [{ category: "asc" }, { basePrice: "asc" }],
     });
     return NextResponse.json({ products });
@@ -25,6 +28,7 @@ export async function POST(req: NextRequest) {
     const {
       name,
       category = "VELAS_NORMAIS_COLORIDAS",
+      categoryId = null,
       basePrice = 0,
       calculatedCost = 0,
       desiredMargin = 30,
@@ -41,12 +45,16 @@ export async function POST(req: NextRequest) {
       data: {
         name: name.trim(),
         category,
+        categoryId: categoryId || null,
         basePrice: Number(basePrice) || 0,
         calculatedCost: Number(calculatedCost) || 0,
         desiredMargin: Number(desiredMargin) || 30,
         stockQuantity: parseInt(stockQuantity, 10) || 0,
         minStockQuantity: parseInt(minStockQuantity, 10) || 5,
         description: description || null,
+      },
+      include: {
+        categoryRef: true,
       },
     });
 
@@ -55,7 +63,7 @@ export async function POST(req: NextRequest) {
       action: "CREATE",
       entity: "Product",
       entityId: newProduct.id,
-      newValues: { name: newProduct.name, category: newProduct.category, basePrice: newProduct.basePrice },
+      newValues: { name: newProduct.name, category: newProduct.category, categoryId: newProduct.categoryId, basePrice: newProduct.basePrice },
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
       description: `Inclusão de novo item no catálogo: ${newProduct.name}`,
     });
@@ -72,7 +80,7 @@ export async function PUT(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json();
-    const { id, name, basePrice, calculatedCost, desiredMargin, stockQuantity, description } = body;
+    const { id, name, category, categoryId, basePrice, calculatedCost, desiredMargin, stockQuantity, minStockQuantity, description } = body;
 
     if (!id) return NextResponse.json({ error: "ID não fornecido" }, { status: 400 });
 
@@ -83,11 +91,17 @@ export async function PUT(req: NextRequest) {
       where: { id },
       data: {
         name: name || existing.name,
+        category: category !== undefined ? category : existing.category,
+        categoryId: categoryId !== undefined ? categoryId : existing.categoryId,
         basePrice: basePrice !== undefined ? Number(basePrice) : existing.basePrice,
         calculatedCost: calculatedCost !== undefined ? Number(calculatedCost) : existing.calculatedCost,
         desiredMargin: desiredMargin !== undefined ? Number(desiredMargin) : existing.desiredMargin,
         stockQuantity: stockQuantity !== undefined ? parseInt(stockQuantity, 10) : existing.stockQuantity,
+        minStockQuantity: minStockQuantity !== undefined ? parseInt(minStockQuantity, 10) : existing.minStockQuantity,
         description: description !== undefined ? description : existing.description,
+      },
+      include: {
+        categoryRef: true,
       },
     });
 

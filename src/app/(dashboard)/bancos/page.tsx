@@ -51,6 +51,14 @@ export default async function BanksAndCardsPage() {
             Gestão de contas correntes, caixas físicos e cartões com prevenção de duplicidade no pagamento de faturas.
           </p>
         </div>
+
+        <a
+          href="/bancos/conciliacao"
+          className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-md shadow-indigo-600/20 transition shrink-0"
+        >
+          <Landmark className="w-4 h-4" />
+          Conciliação Bancária em Tela Única
+        </a>
       </div>
 
       <BanksClientView

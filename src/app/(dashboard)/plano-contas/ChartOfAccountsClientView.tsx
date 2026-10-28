@@ -9,6 +9,10 @@ import {
   X,
   CheckCircle2,
   Search,
+  Power,
+  Trash2,
+  CheckCircle,
+  XCircle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -20,7 +24,9 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
   const router = useRouter();
   const [accounts, setAccounts] = useState<any[]>(initialAccounts);
   const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState<"ATIVAS" | "INATIVAS" | "TODAS">("ATIVAS");
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
   const [feedback, setFeedback] = useState<string | null>(null);
 
   // Modal State
@@ -31,6 +37,7 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
     name: "",
     type: "RECEITA_OPERACIONAL",
     parentId: "",
+    isActive: true,
   });
 
   const typeLabels: Record<string, { label: string; color: string }> = {
@@ -52,6 +59,7 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
       name: "",
       type: "RECEITA_OPERACIONAL",
       parentId: "",
+      isActive: true,
     });
     setShowModal(true);
   };
@@ -63,8 +71,61 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
       name: acc.name || "",
       type: acc.type || "RECEITA_OPERACIONAL",
       parentId: acc.parentId || "",
+      isActive: acc.isActive !== undefined ? acc.isActive : true,
     });
     setShowModal(true);
+  };
+
+  const toggleStatus = async (acc: any) => {
+    const action = acc.isActive ? "inativar" : "reativar";
+    if (!confirm(`Deseja realmente ${action} a conta "${acc.code} - ${acc.name}"?`)) return;
+
+    setActionLoading((prev) => ({ ...prev, [acc.id]: true }));
+    try {
+      const res = await fetch("/api/plano-contas", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: acc.id,
+          isActive: !acc.isActive,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Erro ao ${action} conta`);
+
+      setAccounts((prev) =>
+        prev.map((a) => (a.id === acc.id ? { ...a, isActive: !a.isActive } : a))
+      );
+      setFeedback(`Conta "${acc.code} - ${acc.name}" foi ${action === "inativar" ? "inativada" : "reativada"} com sucesso!`);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [acc.id]: false }));
+    }
+  };
+
+  const handleDelete = async (acc: any) => {
+    if (!confirm(`Deseja realmente excluir a conta contábil "${acc.code} - ${acc.name}"?`)) return;
+
+    setActionLoading((prev) => ({ ...prev, [acc.id]: true }));
+    try {
+      const res = await fetch(`/api/plano-contas?id=${acc.id}`, {
+        method: "DELETE",
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir conta");
+
+      setAccounts((prev) => prev.filter((a) => a.id !== acc.id));
+      setFeedback(`Conta "${acc.code} - ${acc.name}" excluída com sucesso!`);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [acc.id]: false }));
+    }
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -103,11 +164,20 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
     }
   };
 
-  const filteredAccounts = accounts.filter(
-    (acc) =>
-      acc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      acc.code.includes(searchTerm)
-  );
+  const filteredAccounts = accounts.filter((acc) => {
+    if (filterStatus === "ATIVAS" && acc.isActive === false) return false;
+    if (filterStatus === "INATIVAS" && acc.isActive !== false) return false;
+    if (searchTerm.trim()) {
+      return (
+        acc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        acc.code.includes(searchTerm)
+      );
+    }
+    return true;
+  });
+
+  const totalAtivas = accounts.filter((a) => a.isActive !== false).length;
+  const totalInativas = accounts.filter((a) => a.isActive === false).length;
 
   return (
     <div className="space-y-6">
@@ -137,16 +207,35 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
 
       {/* Barra de Ações & Filtro */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Buscar por código ou descrição..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm focus:outline-none"
-          />
+        <div className="flex flex-1 items-center gap-3 w-full sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Buscar por código ou descrição..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs sm:text-sm focus:outline-none"
+            />
+          </div>
+
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0">
+            {(["ATIVAS", "INATIVAS", "TODAS"] as const).map((st) => (
+              <button
+                key={st}
+                onClick={() => setFilterStatus(st)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+                  filterStatus === st
+                    ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm font-semibold"
+                    : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                {st === "ATIVAS" ? `Ativas (${totalAtivas})` : st === "INATIVAS" ? `Inativas (${totalInativas})` : `Todas (${accounts.length})`}
+              </button>
+            ))}
+          </div>
         </div>
+
         <button
           onClick={handleOpenNew}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition shrink-0"
@@ -162,7 +251,7 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
           <span>Código & Descrição da Conta</span>
           <div className="flex items-center gap-8">
             <span>Natureza Contábil</span>
-            <span className="w-16 text-right">Ação</span>
+            <span className="w-24 text-right">Ações</span>
           </div>
         </div>
 
@@ -175,10 +264,14 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
             const paddingLeft =
               acc.level === 1 ? "pl-4" : acc.level === 2 ? "pl-9" : acc.level === 3 ? "pl-14" : "pl-20";
 
+            const isInactive = acc.isActive === false;
+
             return (
               <div
                 key={acc.id}
-                className={`py-3 pr-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/40 transition ${paddingLeft}`}
+                className={`py-3 pr-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/40 transition ${paddingLeft} ${
+                  isInactive ? "opacity-60 bg-slate-50/40 dark:bg-slate-900/40" : ""
+                }`}
               >
                 <div className="flex items-center gap-3">
                   <span
@@ -199,21 +292,48 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
                   >
                     {acc.name}
                   </span>
+                  {isInactive && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-400">
+                      Inativa
+                    </span>
+                  )}
                 </div>
 
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
                   <span
                     className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${badge.color}`}
                   >
                     {badge.label}
                   </span>
-                  <button
-                    onClick={() => handleOpenEdit(acc)}
-                    className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
-                    title="Editar Conta"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleOpenEdit(acc)}
+                      className="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                      title="Editar Conta"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => toggleStatus(acc)}
+                      disabled={actionLoading[acc.id]}
+                      className={`p-1.5 rounded-lg transition ${
+                        isInactive
+                          ? "text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                          : "text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                      }`}
+                      title={isInactive ? "Reativar Conta" : "Inativar Conta"}
+                    >
+                      <Power className={`w-3.5 h-3.5 ${actionLoading[acc.id] ? "animate-spin" : ""}`} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(acc)}
+                      disabled={actionLoading[acc.id]}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition"
+                      title="Excluir Conta (se sem lançamentos)"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -300,6 +420,20 @@ export function ChartOfAccountsClientView({ initialAccounts }: ChartOfAccountsCl
                       </option>
                     ))}
                 </select>
+              </div>
+
+              <div className="flex items-center gap-3 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-800">
+                <input
+                  type="checkbox"
+                  id="accIsActive"
+                  checked={form.isActive}
+                  onChange={(e) => setForm({ ...form, isActive: e.target.checked })}
+                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <label htmlFor="accIsActive" className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                  <strong className="block font-medium">Conta Ativa</strong>
+                  <span className="text-[11px] text-slate-500">Contas inativas não aparecem em novos lançamentos mas preservam o histórico.</span>
+                </label>
               </div>
 
               <div className="flex justify-end gap-3 pt-3">

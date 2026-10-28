@@ -147,6 +147,47 @@ export function InvestmentsClientView({ initialRecovery }: InvestmentsClientView
         )}
       </div>
 
+      {/* Histórico de Deduções / Entradas de Recuperação */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-bold text-slate-900 dark:text-white text-base">
+              Histórico de Amortizações e Retiradas
+            </h3>
+            <p className="text-xs text-slate-500">
+              Recebíveis da D.A. Velas abatidos automaticamente do aporte inicial
+            </p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600">
+            {recovery?.entries?.length || 0} lançamentos vinculados
+          </span>
+        </div>
+
+        <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+          {!recovery?.entries || recovery.entries.length === 0 ? (
+            <p className="py-8 text-center text-xs text-slate-400">
+              Nenhuma amortização vinculada ainda. À medida que contas a receber da D.A. Velas forem liquidadas, os valores abaterão automaticamente aqui.
+            </p>
+          ) : (
+            recovery.entries.map((entry: any) => (
+              <div key={entry.id} className="py-3 flex items-center justify-between text-xs">
+                <div>
+                  <span className="font-semibold text-slate-900 dark:text-white block">
+                    {entry.description}
+                  </span>
+                  <span className="text-[11px] text-slate-400">
+                    {new Date(entry.date).toLocaleDateString("pt-BR")}
+                  </span>
+                </div>
+                <span className="font-mono font-bold text-emerald-600 text-sm">
+                  + {formatBRL(Number(entry.amount))}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
       {/* Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">

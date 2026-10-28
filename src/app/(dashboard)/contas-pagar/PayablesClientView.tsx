@@ -26,6 +26,7 @@ interface PayablesClientViewProps {
   costCenters: any[];
   accounts: any[];
   bankAccounts: any[];
+  suppliers?: any[];
 }
 
 export function PayablesClientView({
@@ -33,6 +34,7 @@ export function PayablesClientView({
   costCenters,
   accounts,
   bankAccounts,
+  suppliers = [],
 }: PayablesClientViewProps) {
   const router = useRouter();
   const [payables, setPayables] = useState(initialPayables);
@@ -41,6 +43,8 @@ export function PayablesClientView({
   const [filterType, setFilterType] = useState("TODOS");
   const [filterStatus, setFilterStatus] = useState("TODOS");
   const [filterCostCenter, setFilterCostCenter] = useState("TODOS");
+  const [filterSupplier, setFilterSupplier] = useState("TODOS");
+  const [filterPeriod, setFilterPeriod] = useState("TODOS");
   const [filterOnlyFixed, setFilterOnlyFixed] = useState(false);
   const [filterPaidDate, setFilterPaidDate] = useState("");
   const [filterScheduledDate, setFilterScheduledDate] = useState("");
@@ -56,6 +60,7 @@ export function PayablesClientView({
   // Form states - Criação
   const [form, setForm] = useState({
     description: "",
+    supplierId: "",
     costCenterId: costCenters[0]?.id || "",
     chartOfAccountId: accounts[0]?.id || "",
     originalAmount: "",
@@ -297,7 +302,31 @@ export function PayablesClientView({
     if (filterType !== "TODOS" && (p.paymentType || "BOLETO") !== filterType) return false;
     if (filterStatus !== "TODOS" && p.status !== filterStatus) return false;
     if (filterCostCenter !== "TODOS" && p.costCenterId !== filterCostCenter) return false;
+    if (filterSupplier !== "TODOS" && p.supplierId !== filterSupplier) return false;
     if (filterOnlyFixed && !p.isFixed) return false;
+
+    // Filtro por Período
+    if (filterPeriod !== "TODOS") {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const due = new Date(p.dueDate);
+      due.setHours(0, 0, 0, 0);
+
+      if (filterPeriod === "HOJE") {
+        if (due.getTime() !== now.getTime()) return false;
+      } else if (filterPeriod === "SEMANA") {
+        const weekEnd = new Date(now);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        if (due < now || due > weekEnd) return false;
+      } else if (filterPeriod === "MES") {
+        if (due.getMonth() !== now.getMonth() || due.getFullYear() !== now.getFullYear()) return false;
+      } else if (filterPeriod === "PROX_30") {
+        const next30 = new Date(now);
+        next30.setDate(next30.getDate() + 30);
+        if (due < now || due > next30) return false;
+      }
+    }
+
     if (filterPaidDate) {
       if (!p.paidAt) return false;
       const pDate = new Date(p.paidAt).toISOString().split("T")[0];
@@ -379,7 +408,42 @@ export function PayablesClientView({
           <span>Filtros do Contas a Pagar</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Período de Vencimento
+            </label>
+            <select
+              value={filterPeriod}
+              onChange={(e) => setFilterPeriod(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-indigo-600 dark:text-indigo-400"
+            >
+              <option value="TODOS">Todos os Períodos</option>
+              <option value="HOJE">Vencendo Hoje</option>
+              <option value="SEMANA">Próximos 7 Dias</option>
+              <option value="MES">Este Mês</option>
+              <option value="PROX_30">Próximos 30 Dias</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Fornecedor
+            </label>
+            <select
+              value={filterSupplier}
+              onChange={(e) => setFilterSupplier(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+            >
+              <option value="TODOS">Todos os Fornecedores</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div>
             <label className="block text-[11px] font-semibold text-slate-500 mb-1">
               Tipo de Pagamento
@@ -637,6 +701,26 @@ export function PayablesClientView({
                   placeholder="Ex: Fornecedor de Cera de Soja"
                 />
               </div>
+
+              {suppliers.length > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                    Vincular Fornecedor (Opcional)
+                  </label>
+                  <select
+                    value={form.supplierId}
+                    onChange={(e) => setForm({ ...form, supplierId: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                  >
+                    <option value="">Nenhum fornecedor vinculado</option>
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} {s.tradeName ? `(${s.tradeName})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div>

@@ -20,9 +20,14 @@ import { useRouter } from "next/navigation";
 interface CatalogClientViewProps {
   initialProducts: any[];
   categoryLabels: Record<string, string>;
+  officialCategories?: any[];
 }
 
-export function CatalogClientView({ initialProducts, categoryLabels }: CatalogClientViewProps) {
+export function CatalogClientView({
+  initialProducts,
+  categoryLabels,
+  officialCategories = [],
+}: CatalogClientViewProps) {
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
@@ -33,6 +38,7 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
   // Form states de criação
   const [createName, setCreateName] = useState("");
   const [createCategory, setCreateCategory] = useState("VELAS_NORMAIS_COLORIDAS");
+  const [createCategoryId, setCreateCategoryId] = useState("");
   const [createBasePrice, setCreateBasePrice] = useState("35.00");
   const [createCost, setCreateCost] = useState("15.00");
   const [createMargin, setCreateMargin] = useState("50");
@@ -42,6 +48,7 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
 
   // Form states de edição do produto
   const [name, setName] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [basePrice, setBasePrice] = useState("");
   const [stockQuantity, setStockQuantity] = useState("0");
   const [description, setDescription] = useState("");
@@ -62,6 +69,7 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
   const handleOpenEdit = (p: any) => {
     setEditingProduct(p);
     setName(p.name);
+    setCategoryId(p.categoryId || "");
     setBasePrice(String(p.basePrice));
     setStockQuantity(String(p.stockQuantity));
     setDescription(p.description || "");
@@ -90,6 +98,7 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
         body: JSON.stringify({
           id: editingProduct.id,
           name,
+          categoryId: categoryId || null,
           basePrice: parseFloat(basePrice),
           calculatedCost: parseFloat(totalCalculatedCost.toFixed(2)),
           desiredMargin: parseFloat(String(desiredMargin)),
@@ -129,6 +138,7 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
         body: JSON.stringify({
           name: createName,
           category: createCategory,
+          categoryId: createCategoryId || null,
           basePrice: parseFloat(createBasePrice) || 0,
           calculatedCost: parseFloat(createCost) || 0,
           desiredMargin: parseFloat(createMargin) || 30,
@@ -214,6 +224,13 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
                         {item.weightGrams ? `${item.weightGrams} g` : item.volumeMl ? `~${item.volumeMl} ml` : "Unid."}
                       </span>
                     </div>
+                    {item.categoryRef && (
+                      <div className="mb-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                          {item.categoryRef.name}
+                        </span>
+                      </div>
+                    )}
                     <p className="text-xs text-slate-500 line-clamp-2 mb-3">{item.description}</p>
                   </div>
 
@@ -291,6 +308,28 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
                 />
               </div>
+
+              {officialCategories.length > 0 && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Categoria Oficial Centralizada
+                  </label>
+                  <select
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
+                  >
+                    <option value="">Selecione uma categoria oficial padronizada...</option>
+                    {officialCategories
+                      .filter((c) => c.isActive || c.id === categoryId)
+                      .map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.code ? `[${cat.code}] ` : ""}{cat.name} {!cat.isActive ? "(Inativa)" : ""}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
 
               {/* Bloco da Calculadora Gasto por Item */}
               <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
@@ -481,9 +520,31 @@ export function CatalogClientView({ initialProducts, categoryLabels }: CatalogCl
                 />
               </div>
 
+              {officialCategories.length > 0 && (
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Vincular a Categoria Padronizada
+                  </label>
+                  <select
+                    value={createCategoryId}
+                    onChange={(e) => setCreateCategoryId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
+                  >
+                    <option value="">Selecione categoria oficial (opcional)...</option>
+                    {officialCategories
+                      .filter((c) => c.isActive)
+                      .map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.code ? `[${cat.code}] ` : ""}{cat.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                  Categoria Oficial *
+                  Seção Visual do Catálogo *
                 </label>
                 <select
                   value={createCategory}

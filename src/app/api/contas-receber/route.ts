@@ -81,6 +81,41 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // Amortização automática na Recuperação de Capital D.A. Velas
+      try {
+        const costCenter = await db.costCenter.findUnique({ where: { id: rec.costCenterId } });
+        if (costCenter && (costCenter.code === "VELAS" || costCenter.name.toUpperCase().includes("VELA"))) {
+          let recovery = await db.capitalRecovery.findFirst();
+          if (!recovery) {
+            recovery = await db.capitalRecovery.create({
+              data: {
+                initialCapital: 1600.0,
+                recoveredAmount: 0,
+                notes: "Recuperação do aporte inicial D.A. Com Carinho",
+              },
+            });
+          }
+
+          await db.capitalRecovery.update({
+            where: { id: recovery.id },
+            data: {
+              recoveredAmount: { increment: receivedAmount },
+            },
+          });
+
+          await db.capitalRecoveryEntry.create({
+            data: {
+              capitalRecoveryId: recovery.id,
+              receivableId: rec.id,
+              amount: receivedAmount,
+              description: `Recebimento de título: ${rec.description}`,
+            },
+          });
+        }
+      } catch (errRecovery) {
+        console.error("Erro ao amortizar na recuperação de capital:", errRecovery);
+      }
+
       await logAudit({
         userId: user.id,
         action: "STATUS_CHANGE",

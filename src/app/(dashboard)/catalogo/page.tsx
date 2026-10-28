@@ -7,13 +7,39 @@ export const dynamic = "force-dynamic";
 
 export default async function CatalogPage() {
   let products: any[] = [];
+  let officialCategories: any[] = [];
+
   try {
     products = await db.product.findMany({
+      include: {
+        categoryRef: true,
+      },
       orderBy: [{ category: "asc" }, { basePrice: "asc" }],
     });
   } catch (e) {
     console.error("Erro ao carregar catálogo de produtos:", e);
   }
+
+  try {
+    officialCategories = await db.category.findMany({
+      orderBy: { name: "asc" },
+    });
+  } catch (e) {
+    console.error("Erro ao carregar categorias oficiais:", e);
+  }
+
+  // Serializa datas
+  const serializedProducts = products.map((p) => ({
+    ...p,
+    createdAt: p.createdAt.toISOString(),
+    updatedAt: p.updatedAt.toISOString(),
+  }));
+
+  const serializedCategories = officialCategories.map((c) => ({
+    ...c,
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+  }));
 
   const categoryLabels: Record<string, string> = {
     VELAS_NORMAIS_COLORIDAS: "14.1. Velas Normais e Coloridas",
@@ -54,8 +80,9 @@ export default async function CatalogPage() {
       </div>
 
       <CatalogClientView
-        initialProducts={products}
+        initialProducts={serializedProducts}
         categoryLabels={categoryLabels}
+        officialCategories={serializedCategories}
       />
     </div>
   );

@@ -36,6 +36,7 @@ export function ReceivablesClientView({
   const [receivables, setReceivables] = useState(initialReceivables);
 
   // Filtros Avançados
+  const [filterPeriod, setFilterPeriod] = useState("TODOS");
   const [filterStartDate, setFilterStartDate] = useState("");
   const [filterEndDate, setFilterEndDate] = useState("");
   const [filterStatus, setFilterStatus] = useState("TODOS");
@@ -280,6 +281,28 @@ export function ReceivablesClientView({
     if (filterCostCenter !== "TODOS" && r.costCenterId !== filterCostCenter) return false;
     if (filterPaymentType !== "TODOS" && (r.paymentType || "PIX") !== filterPaymentType) return false;
 
+    // Filtro por Período
+    if (filterPeriod !== "TODOS") {
+      const now = new Date();
+      now.setHours(0, 0, 0, 0);
+      const due = new Date(r.dueDate);
+      due.setHours(0, 0, 0, 0);
+
+      if (filterPeriod === "HOJE") {
+        if (due.getTime() !== now.getTime()) return false;
+      } else if (filterPeriod === "SEMANA") {
+        const weekEnd = new Date(now);
+        weekEnd.setDate(weekEnd.getDate() + 7);
+        if (due < now || due > weekEnd) return false;
+      } else if (filterPeriod === "MES") {
+        if (due.getMonth() !== now.getMonth() || due.getFullYear() !== now.getFullYear()) return false;
+      } else if (filterPeriod === "PROX_30") {
+        const next30 = new Date(now);
+        next30.setDate(next30.getDate() + 30);
+        if (due < now || due > next30) return false;
+      }
+    }
+
     if (filterStartDate) {
       const due = new Date(r.dueDate).toISOString().split("T")[0];
       if (due < filterStartDate) return false;
@@ -360,7 +383,24 @@ export function ReceivablesClientView({
           <span>Filtros do Contas a Receber</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+              Período Rápido
+            </label>
+            <select
+              value={filterPeriod}
+              onChange={(e) => setFilterPeriod(e.target.value)}
+              className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-emerald-600 dark:text-emerald-400"
+            >
+              <option value="TODOS">Todos os Períodos</option>
+              <option value="HOJE">Vencendo Hoje</option>
+              <option value="SEMANA">Próximos 7 Dias</option>
+              <option value="MES">Este Mês</option>
+              <option value="PROX_30">Próximos 30 Dias</option>
+            </select>
+          </div>
+
           <div>
             <label className="block text-[11px] font-semibold text-slate-500 mb-1">
               Data Início (Vencimento)

@@ -39,6 +39,8 @@ export function ContractsClientView({
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"CONTRATOS" | "CLIENTES">("CONTRATOS");
   const [contracts, setContracts] = useState(initialContracts);
+  const [contractFilterStatus, setContractFilterStatus] = useState<"TODOS" | "ATIVO" | "CANCELADO">("TODOS");
+  const [contractSearch, setContractSearch] = useState("");
   const [customerList, setCustomerList] = useState(customers);
   const [clientSearch, setClientSearch] = useState("");
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
@@ -398,13 +400,44 @@ export function ContractsClientView({
       {/* ABA 1: CONTRATOS */}
       {activeTab === "CONTRATOS" && (
         <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Total de Contratos: {contracts.length}
-            </span>
+          {/* Barra de Filtros e Busca de Contratos */}
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
+            <div className="flex flex-1 items-center gap-3 w-full sm:w-auto">
+              <div className="relative flex-1 max-w-sm">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  placeholder="Buscar contrato ou cliente..."
+                  value={contractSearch}
+                  onChange={(e) => setContractSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl shrink-0">
+                {(["TODOS", "ATIVO", "CANCELADO"] as const).map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => setContractFilterStatus(st)}
+                    className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all ${
+                      contractFilterStatus === st
+                        ? "bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-sm"
+                        : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+                    }`}
+                  >
+                    {st === "TODOS"
+                      ? `Todos (${contracts.length})`
+                      : st === "ATIVO"
+                      ? `Ativos (${contracts.filter((c) => c.status === "ATIVO").length})`
+                      : `Cancelados (${contracts.filter((c) => c.status === "CANCELADO").length})`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
+              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition shrink-0"
             >
               <Plus className="w-4 h-4" />
               Gerar Novo Contrato
@@ -426,14 +459,38 @@ export function ContractsClientView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {contracts.length === 0 ? (
+                  {contracts
+                    .filter((ct) => {
+                      if (contractFilterStatus !== "TODOS" && ct.status !== contractFilterStatus) return false;
+                      if (contractSearch.trim()) {
+                        const q = contractSearch.toLowerCase();
+                        const matchNum = ct.contractNumber?.toLowerCase().includes(q);
+                        const matchClient = ct.customer?.name?.toLowerCase().includes(q);
+                        const matchTitle = ct.title?.toLowerCase().includes(q);
+                        return matchNum || matchClient || matchTitle;
+                      }
+                      return true;
+                    })
+                    .length === 0 ? (
                     <tr>
                       <td colSpan={7} className="text-center py-10 text-slate-400">
-                        Nenhum contrato gerado ainda. Clique em "Gerar Novo Contrato" para começar.
+                        Nenhum contrato encontrado para o filtro aplicado.
                       </td>
                     </tr>
                   ) : (
-                    contracts.map((ct) => {
+                    contracts
+                      .filter((ct) => {
+                        if (contractFilterStatus !== "TODOS" && ct.status !== contractFilterStatus) return false;
+                        if (contractSearch.trim()) {
+                          const q = contractSearch.toLowerCase();
+                          const matchNum = ct.contractNumber?.toLowerCase().includes(q);
+                          const matchClient = ct.customer?.name?.toLowerCase().includes(q);
+                          const matchTitle = ct.title?.toLowerCase().includes(q);
+                          return matchNum || matchClient || matchTitle;
+                        }
+                        return true;
+                      })
+                      .map((ct) => {
                       const isAtivo = ct.status === "ATIVO";
 
                       return (

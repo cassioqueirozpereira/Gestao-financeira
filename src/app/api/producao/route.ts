@@ -1,28 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
-import { z } from "zod";
 import { db } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 
-const createProductionSchema = z.object({
-  batchNumber: z.string().min(2),
-  costCenter: z.enum(["VELAS", "RESINAS"]),
-  materialCost: z.number().min(0),
-  gasCost: z.number().min(0).default(0.20),
-  energyCost: z.number().min(0).default(0.45),
-  laborCost: z.number().min(0).default(60.00),
-  notes: z.string().optional(),
-});
-
 export async function GET() {
   try {
     const orders = await db.productionOrder.findMany({
+      include: {
+        product: {
+          include: { categoryRef: true },
+        },
+        ingredientConsumptions: {
+          include: { rawMaterial: true },
+        },
+        packagingConsumptions: {
+          include: { packaging: true },
+        },
+      },
       orderBy: { productionDate: "desc" },
     });
     return NextResponse.json({ orders });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro ao listar produção:", error);
     return NextResponse.json({ error: "Erro ao buscar produção" }, { status: 500 });
   }
@@ -34,41 +34,214 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json();
-    const parsed = createProductionSchema.safeParse(body);
-    if (!parsed.success) {
-      return NextResponse.json({ error: "Dados inválidos", details: parsed.error.format() }, { status: 400 });
+    const {
+      batchNumber,
+      productId, // Opcional se for avulso
+      costCenter = "VELAS",
+      quantityProduced = 1,
+      materialCost = 0,
+      packagingCost = 0,
+      gasCost = 0.20,
+      energyCost = 0.45,
+      laborCost = 60.00,
+      notes,
+      ingredientConsumptions = [], // [{ rawMaterialId, quantityUsed, unit, unitCost }]
+      packagingConsumptions = [], // [{ packagingId, quantityUsed, unitCost }]
+    } = body;
+
+    if (!batchNumber || !batchNumber.trim()) {
+      return NextResponse.json({ error: "Número do lote é obrigatório" }, { status: 400 });
     }
 
-    const { batchNumber, costCenter, materialCost, gasCost, energyCost, laborCost, notes } = parsed.data;
-    const totalCost = materialCost + gasCost + energyCost + laborCost;
+    const units = Math.max(1, parseInt(quantityProduced, 10) || 1);
+    const totalCost = Number(materialCost) + Number(packagingCost) + Number(gasCost) + Number(energyCost) + Number(laborCost);
+    const unitCost = Number((totalCost / units).toFixed(2));
 
-    const order = await db.productionOrder.create({
-      data: {
-        batchNumber,
-        costCenter,
-        materialCost,
-        gasCost,
-        energyCost,
-        laborCost,
-        totalCost,
-        notes: notes || null,
-        isConfirmed: true,
-      },
+    const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
+
+    const result = await db.$transaction(async (tx) => {
+      // 1. Cria a Ordem de Produção
+      const order = await tx.productionOrder.create({
+        data: {
+          batchNumber: batchNumber.trim(),
+          productId: productId || null,
+          costCenter,
+          quantityProduced: units,
+          materialCost: Number(materialCost),
+          packagingCost: Number(packagingCost),
+          gasCost: Number(gasCost),
+          energyCost: Number(energyCost),
+          laborCost: Number(laborCost),
+          totalCost: Number(totalCost),
+          unitCost: Number(unitCost),
+          notes: notes?.trim() || null,
+          isConfirmed: true,
+          productionDate: new Date(),
+        },
+      });
+
+      // 2. Registra consumo e baixa de matérias-primas
+      for (const ing of ingredientConsumptions) {
+        if (!ing.rawMaterialId || !ing.quantityUsed) continue;
+
+        const raw = await tx.rawMaterial.findUnique({ where: { id: ing.rawMaterialId } });
+        if (!raw) continue;
+
+        const rawQty = Number(ing.quantityUsed);
+        let convertedQty = rawQty;
+
+        // Conversão automática: se raw está em KG e input foi em G
+        if (raw.unit.toUpperCase() === "KG" && ing.unit?.toUpperCase() === "G") {
+          convertedQty = rawQty / 1000;
+        } else if (raw.unit.toUpperCase() === "G" && ing.unit?.toUpperCase() === "KG") {
+          convertedQty = rawQty * 1000;
+        }
+        // Conversão automática: se raw está em L e input foi em ML
+        else if (raw.unit.toUpperCase() === "L" && ing.unit?.toUpperCase() === "ML") {
+          convertedQty = rawQty / 1000;
+        } else if (raw.unit.toUpperCase() === "ML" && ing.unit?.toUpperCase() === "L") {
+          convertedQty = rawQty * 1000;
+        }
+
+        const ingUnitCost = Number(ing.unitCost || raw.unitCost);
+        const ingTotalCost = convertedQty * ingUnitCost;
+
+        await tx.productionIngredientConsumption.create({
+          data: {
+            productionOrderId: order.id,
+            rawMaterialId: raw.id,
+            quantityUsed: convertedQty,
+            unit: raw.unit,
+            unitCost: ingUnitCost,
+            totalCost: ingTotalCost,
+          },
+        });
+
+        // Deduz do estoque de matéria-prima
+        const newRawStock = Math.max(0, Number(raw.currentStock) - convertedQty);
+        await tx.rawMaterial.update({
+          where: { id: raw.id },
+          data: { currentStock: newRawStock },
+        });
+
+        // Registra movimentação de saída
+        await tx.stockMovement.create({
+          data: {
+            itemType: "MATERIA_PRIMA",
+            itemId: raw.id,
+            itemName: raw.name,
+            movementType: "SAIDA",
+            quantity: convertedQty,
+            unit: raw.unit,
+            unitCost: ingUnitCost,
+            totalCost: ingTotalCost,
+            origin: "PRODUCAO",
+            batchNumber: order.batchNumber,
+            documentReference: `Lote ${order.batchNumber}`,
+            notes: `Consumo na fabricação de ${units} un do lote ${order.batchNumber}`,
+            userId: user.id,
+          },
+        });
+      }
+
+      // 3. Registra consumo e baixa de embalagens
+      for (const packItem of packagingConsumptions) {
+        if (!packItem.packagingId || !packItem.quantityUsed) continue;
+
+        const pack = await tx.packaging.findUnique({ where: { id: packItem.packagingId } });
+        if (!pack) continue;
+
+        const packQty = Math.round(Number(packItem.quantityUsed));
+        const packUnitCost = Number(packItem.unitCost || pack.unitCost);
+        const packTotalCost = packQty * packUnitCost;
+
+        await tx.productionPackagingConsumption.create({
+          data: {
+            productionOrderId: order.id,
+            packagingId: pack.id,
+            quantityUsed: packQty,
+            unitCost: packUnitCost,
+            totalCost: packTotalCost,
+          },
+        });
+
+        // Deduz do estoque de embalagens
+        const newPackStock = Math.max(0, pack.currentStock - packQty);
+        await tx.packaging.update({
+          where: { id: pack.id },
+          data: { currentStock: newPackStock },
+        });
+
+        // Registra movimentação de saída
+        await tx.stockMovement.create({
+          data: {
+            itemType: "EMBALAGEM",
+            itemId: pack.id,
+            itemName: pack.name,
+            movementType: "SAIDA",
+            quantity: packQty,
+            unit: pack.unit,
+            unitCost: packUnitCost,
+            totalCost: packTotalCost,
+            origin: "PRODUCAO",
+            batchNumber: order.batchNumber,
+            documentReference: `Lote ${order.batchNumber}`,
+            notes: `Consumo de embalagem no lote ${order.batchNumber}`,
+            userId: user.id,
+          },
+        });
+      }
+
+      // 4. Se vinculado a um produto do catálogo oficial, incrementa o estoque e atualiza custo unitário
+      if (productId) {
+        const prod = await tx.product.findUnique({ where: { id: productId } });
+        if (prod) {
+          const newProdStock = prod.stockQuantity + units;
+          await tx.product.update({
+            where: { id: productId },
+            data: {
+              stockQuantity: newProdStock,
+              calculatedCost: unitCost,
+            },
+          });
+
+          // Registra movimentação de entrada de produto acabado
+          await tx.stockMovement.create({
+            data: {
+              itemType: "PRODUTO_ACABADO",
+              itemId: prod.id,
+              itemName: prod.name,
+              movementType: "ENTRADA",
+              quantity: units,
+              unit: "UN",
+              unitCost,
+              totalCost,
+              origin: "PRODUCAO",
+              batchNumber: order.batchNumber,
+              documentReference: `Lote ${order.batchNumber}`,
+              notes: `Produção concluída de ${units} unidades do lote ${order.batchNumber}`,
+              userId: user.id,
+            },
+          });
+        }
+      }
+
+      return order;
     });
 
     await logAudit({
       userId: user.id,
       action: "CREATE",
       entity: "ProductionOrder",
-      entityId: order.id,
-      newValues: { batchNumber, totalCost },
-      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-      description: `Registrado lote de produção ${batchNumber} (${costCenter}) com custo total de R$ ${totalCost.toFixed(2)}`,
+      entityId: result.id,
+      newValues: { batchNumber, totalCost, unitCost, quantityProduced: units },
+      ipAddress,
+      description: `Registrado lote de produção ${result.batchNumber} com custo total de R$ ${totalCost.toFixed(2)} (R$ ${unitCost.toFixed(2)}/un). Estoque atualizado automaticamente.`,
     });
 
-    return NextResponse.json({ success: true, order });
-  } catch (error) {
-    console.error("Erro ao criar ordem de produção:", error);
-    return NextResponse.json({ error: "Erro interno ao registrar lote" }, { status: 500 });
+    return NextResponse.json({ success: true, order: result });
+  } catch (error: any) {
+    console.error("Erro ao criar ordem de produção com consumo real:", error);
+    return NextResponse.json({ error: error.message || "Erro ao registrar lote" }, { status: 500 });
   }
 }

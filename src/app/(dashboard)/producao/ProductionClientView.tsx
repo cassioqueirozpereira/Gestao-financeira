@@ -19,6 +19,9 @@ import { useRouter } from "next/navigation";
 
 interface ProductionClientViewProps {
   initialOrders: any[];
+  products?: any[];
+  rawMaterials?: any[];
+  packagings?: any[];
 }
 
 // Catálogo de Vasilhas / Potes com valores médios de mercado
@@ -32,7 +35,12 @@ const POTES_CATALOGO = [
   { id: "outro_avulso", name: "Outro / Pote Fornecido pelo Cliente", price: 0.00 },
 ];
 
-export function ProductionClientView({ initialOrders }: ProductionClientViewProps) {
+export function ProductionClientView({
+  initialOrders,
+  products = [],
+  rawMaterials = [],
+  packagings = [],
+}: ProductionClientViewProps) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [showModal, setShowModal] = useState(false);
@@ -44,8 +52,19 @@ export function ProductionClientView({ initialOrders }: ProductionClientViewProp
     `LOTE-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-01`
   );
   const [costCenter, setCostCenter] = useState<"VELAS" | "RESINAS">("VELAS");
-  const [productName, setProductName] = useState("Vela Aromática Artesanal");
+  const [selectedProductId, setSelectedProductId] = useState(products[0]?.id || "");
+  const [productName, setProductName] = useState(products[0]?.name || "Vela Aromática Artesanal");
   const [unitsToProduce, setUnitsToProduce] = useState(10); // Quantidade de unidades a fabricar
+
+  // Vínculo aos Insumos do Banco de Dados
+  const ceraFromDb = rawMaterials.find((m) => m.name.toLowerCase().includes("cera") || m.category === "CERA");
+  const essenciaFromDb = rawMaterials.find((m) => m.name.toLowerCase().includes("essência") || m.name.toLowerCase().includes("essencia") || m.category === "ESSENCIA");
+  const pavioFromDb = rawMaterials.find((m) => m.name.toLowerCase().includes("pavio"));
+  const packagingFromDb = packagings[0];
+
+  const [ceraId, setCeraId] = useState(ceraFromDb?.id || "");
+  const [essenciaId, setEssenciaId] = useState(essenciaFromDb?.id || "");
+  const [packagingId, setPackagingId] = useState(packagingFromDb?.id || "");
 
   // 1. CERA (Preço da última compra por kg / 1000g)
   const [ceraPurchasePricePerKg, setCeraPurchasePricePerKg] = useState(40.00); // R$ 40/kg
@@ -115,18 +134,59 @@ export function ProductionClientView({ initialOrders }: ProductionClientViewProp
 
     const notesSummary = `Item: ${productName} (${unitsToProduce} un). Cera: ${unitsToProduce * ceraGramsPerUnit}g (R$ ${ceraCostTotal.toFixed(2)}). Essência: ${unitsToProduce * essenciaMlPerUnit}ml (R$ ${essenciaCostTotal.toFixed(2)}). Potes: R$ ${poteCostTotal.toFixed(2)}. Pavio/Corante/Emb: R$ ${(pavioCostTotal + coranteCostTotal + embalagemCostTotal).toFixed(2)}. Perda 10%: R$ ${technicalLossAmount.toFixed(2)}. Custo Unitário: R$ ${unitCost.toFixed(2)}/peça.`;
 
+    // Constrói consumos reais para dar baixa no estoque
+    const ingredientConsumptions: any[] = [];
+    if (ceraId) {
+      ingredientConsumptions.push({
+        rawMaterialId: ceraId,
+        quantityUsed: unitsToProduce * ceraGramsPerUnit,
+        unit: "G",
+        unitCost: ceraPricePerGram * 1000,
+      });
+    }
+    if (essenciaId) {
+      ingredientConsumptions.push({
+        rawMaterialId: essenciaId,
+        quantityUsed: unitsToProduce * essenciaMlPerUnit,
+        unit: "ML",
+        unitCost: essenciaPricePerMl * 1000,
+      });
+    }
+    if (pavioFromDb) {
+      ingredientConsumptions.push({
+        rawMaterialId: pavioFromDb.id,
+        quantityUsed: unitsToProduce,
+        unit: pavioFromDb.unit || "UN",
+        unitCost: pavioUnitPrice,
+      });
+    }
+
+    const packagingConsumptions: any[] = [];
+    if (packagingId) {
+      packagingConsumptions.push({
+        packagingId,
+        quantityUsed: unitsToProduce,
+        unitCost: customPotePrice,
+      });
+    }
+
     try {
       const res = await fetch("/api/producao", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           batchNumber,
+          productId: selectedProductId || null,
           costCenter,
+          quantityProduced: unitsToProduce,
           materialCost: parseFloat(totalRawMaterialsWithLoss.toFixed(2)),
+          packagingCost: parseFloat((poteCostTotal + embalagemCostTotal).toFixed(2)),
           gasCost: parseFloat(gasCost.toFixed(2)),
           energyCost: parseFloat(energyCost.toFixed(2)),
           laborCost: parseFloat(calculatedLaborCost.toFixed(2)),
           notes: notesSummary,
+          ingredientConsumptions,
+          packagingConsumptions,
         }),
       });
 
@@ -186,10 +246,11 @@ export function ProductionClientView({ initialOrders }: ProductionClientViewProp
               <div className="flex items-center justify-between">
                 <div>
                   <span className="text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                    {order.costCenter}
+                    {order.costCenter} {order.quantityProduced ? `• ${order.quantityProduced} un` : ""}
+                    {order.unitCost > 0 ? ` • ${formatBRL(Number(order.unitCost))}/un` : ""}
                   </span>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    {order.batchNumber}
+                    {order.batchNumber} {order.product ? `— ${order.product.name}` : ""}
                   </h3>
                 </div>
                 <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 flex items-center justify-center font-bold text-xs">
@@ -289,15 +350,35 @@ export function ProductionClientView({ initialOrders }: ProductionClientViewProp
 
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                    Nome do Produto
+                    Produto do Catálogo Oficial
                   </label>
-                  <input
-                    type="text"
-                    required
-                    value={productName}
-                    onChange={(e) => setProductName(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
-                  />
+                  {products.length > 0 ? (
+                    <select
+                      value={selectedProductId}
+                      onChange={(e) => {
+                        const pId = e.target.value;
+                        setSelectedProductId(pId);
+                        const found = products.find((p) => p.id === pId);
+                        if (found) setProductName(found.name);
+                      }}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                    >
+                      <option value="">Item Avulso / Não cadastrado</option>
+                      {products.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      required
+                      value={productName}
+                      onChange={(e) => setProductName(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                    />
+                  )}
                 </div>
 
                 <div>
