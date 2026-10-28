@@ -54,6 +54,7 @@ export function ConciliacaoClientView({
   const [showImportModal, setShowImportModal] = useState(false);
   const [extratoText, setExtratoText] = useState("");
   const [importing, setImporting] = useState(false);
+  const [parsingPdf, setParsingPdf] = useState(false);
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
   // Inline Creation Modal / State
@@ -137,6 +138,44 @@ export function ConciliacaoClientView({
     }
 
     return parsed;
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.name.toLowerCase().endsWith(".pdf")) {
+      setParsingPdf(true);
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        const res = await fetch("/api/bancos/conciliacao/parse-pdf", {
+          method: "POST",
+          body: formData,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Erro ao ler extrato PDF");
+
+        if (data.csvText) {
+          setExtratoText(data.csvText);
+          alert(`Extrato PDF "${file.name}" processado! ${data.transactionsCount} transações identificadas.`);
+        } else if (data.rawExtractedPreview) {
+          setExtratoText(data.rawExtractedPreview);
+          alert(`Texto do PDF "${file.name}" extraído. Verifique o conteúdo na caixa.`);
+        }
+      } catch (err: any) {
+        alert(err.message || "Falha ao processar arquivo PDF");
+      } finally {
+        setParsingPdf(false);
+      }
+    } else {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        if (text) setExtratoText(text);
+      };
+      reader.readAsText(file);
+    }
   };
 
   const handleImportExtrato = async (e: React.FormEvent) => {
@@ -472,14 +511,37 @@ export function ConciliacaoClientView({
 
             <form onSubmit={handleImportExtrato} className="space-y-4 text-xs">
               <p className="text-slate-500">
-                Cole o conteúdo do seu arquivo <strong>.OFX</strong> ou <strong>.CSV</strong> bancário abaixo (ou linhas no formato <code>Data; Descrição; Valor</code>). O sistema importará e cruzará automaticamente com seus títulos em aberto.
+                Selecione o arquivo de extrato em <strong>.PDF</strong>, <strong>.OFX</strong> ou <strong>.CSV</strong> do seu banco, ou cole o conteúdo diretamente no campo de texto abaixo.
               </p>
 
+              {/* Botão de Upload de Arquivo PDF / OFX / CSV */}
+              <div className="border-2 border-dashed border-indigo-200 dark:border-indigo-900/60 rounded-2xl p-4 bg-indigo-50/50 dark:bg-indigo-950/20 text-center hover:border-indigo-400 transition">
+                <label className="cursor-pointer flex flex-col items-center justify-center gap-1.5">
+                  <Upload className="w-7 h-7 text-indigo-500 animate-pulse" />
+                  <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
+                    {parsingPdf ? "Processando e decodificando extrato PDF..." : "Clique para carregar Extrato (.PDF, .OFX, .CSV)"}
+                  </span>
+                  <span className="text-[10px] text-slate-400">
+                    Compatível com extratos digitais em PDF emitidos por bancos (Nubank, Itaú, Bradesco, Inter, Santander, BB, etc.)
+                  </span>
+                  <input
+                    type="file"
+                    accept=".pdf,.ofx,.csv,.txt"
+                    disabled={parsingPdf}
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+              </div>
+
               <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Linhas do Extrato a Importar (Data; Descrição; Valor)
+                </label>
                 <textarea
-                  rows={8}
+                  rows={7}
                   required
-                  placeholder={`Cole aqui o conteúdo do arquivo OFX ou CSV, por exemplo:\n25/10/2026; Pagamento Fornecedor Cera; -150.00\n26/10/2026; Recebimento PIX Cliente; 320.00\n27/10/2026; Tarifa Mensalidade Conta; -29.90`}
+                  placeholder={`Cole aqui ou faça o upload do arquivo acima:\n25/10/2026; Pagamento Fornecedor Cera; -150.00\n26/10/2026; Recebimento PIX Cliente; 320.00\n27/10/2026; Tarifa Mensalidade Conta; -29.90`}
                   value={extratoText}
                   onChange={(e) => setExtratoText(e.target.value)}
                   className="w-full p-3 font-mono text-xs bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-indigo-500 text-slate-900 dark:text-white"

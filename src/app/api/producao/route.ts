@@ -36,7 +36,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const {
       batchNumber,
-      productId, // Opcional se for avulso
+      productId, // Compatibilidade com chamada simples
+      producedProducts = [], // Array de múltiplos modelos: [{ productId, quantity }]
       costCenter = "VELAS",
       quantityProduced = 1,
       materialCost = 0,
@@ -53,18 +54,27 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Número do lote é obrigatório" }, { status: 400 });
     }
 
-    const units = Math.max(1, parseInt(quantityProduced, 10) || 1);
+    // Calcula unidades totais considerando múltiplos modelos ou quantidade única
+    let units = Math.max(1, parseInt(quantityProduced, 10) || 1);
+    if (producedProducts && Array.isArray(producedProducts) && producedProducts.length > 0) {
+      const sumUnits = producedProducts.reduce((acc: number, p: any) => acc + (Number(p.quantity) || 0), 0);
+      if (sumUnits > 0) units = sumUnits;
+    }
+
     const totalCost = Number(materialCost) + Number(packagingCost) + Number(gasCost) + Number(energyCost) + Number(laborCost);
     const unitCost = Number((totalCost / units).toFixed(2));
 
     const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
+
+    // Produto principal de referência da ordem
+    const mainProductId = (producedProducts && producedProducts[0]?.productId) || productId || null;
 
     const result = await db.$transaction(async (tx) => {
       // 1. Cria a Ordem de Produção
       const order = await tx.productionOrder.create({
         data: {
           batchNumber: batchNumber.trim(),
-          productId: productId || null,
+          productId: mainProductId,
           costCenter,
           quantityProduced: units,
           materialCost: Number(materialCost),
@@ -192,8 +202,44 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // 4. Se vinculado a um produto do catálogo oficial, incrementa o estoque e atualiza custo unitário
-      if (productId) {
+      // 4. Incrementa o estoque e gera movimentação para cada modelo produzido no lote
+      if (producedProducts && Array.isArray(producedProducts) && producedProducts.length > 0) {
+        for (const prodItem of producedProducts) {
+          if (!prodItem.productId || !prodItem.quantity) continue;
+          const prod = await tx.product.findUnique({ where: { id: prodItem.productId } });
+          if (prod) {
+            const qty = Number(prodItem.quantity);
+            const newProdStock = prod.stockQuantity + qty;
+            await tx.product.update({
+              where: { id: prodItem.productId },
+              data: {
+                stockQuantity: newProdStock,
+                calculatedCost: unitCost,
+              },
+            });
+
+            // Registra movimentação de entrada para este modelo
+            await tx.stockMovement.create({
+              data: {
+                itemType: "PRODUTO_ACABADO",
+                itemId: prod.id,
+                itemName: prod.name,
+                movementType: "ENTRADA",
+                quantity: qty,
+                unit: "UN",
+                unitCost,
+                totalCost: qty * unitCost,
+                origin: "PRODUCAO",
+                batchNumber: order.batchNumber,
+                documentReference: `Lote ${order.batchNumber}`,
+                notes: `Produção concluída de ${qty} unidades do modelo "${prod.name}" no lote ${order.batchNumber}`,
+                userId: user.id,
+              },
+            });
+          }
+        }
+      } else if (productId) {
+        // Fallback para produção de modelo único
         const prod = await tx.product.findUnique({ where: { id: productId } });
         if (prod) {
           const newProdStock = prod.stockQuantity + units;

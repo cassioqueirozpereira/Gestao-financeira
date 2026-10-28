@@ -14,6 +14,8 @@ import {
   Layers,
   CheckCircle2,
   TrendingUp,
+  Trash2,
+  Search,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -52,47 +54,129 @@ export function ProductionClientView({
     `LOTE-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-01`
   );
   const [costCenter, setCostCenter] = useState<"VELAS" | "RESINAS">("VELAS");
-  const [selectedProductId, setSelectedProductId] = useState(products[0]?.id || "");
-  const [productName, setProductName] = useState(products[0]?.name || "Vela Aromática Artesanal");
-  const [unitsToProduce, setUnitsToProduce] = useState(10); // Quantidade de unidades a fabricar
+
+  // Lista dinâmica de múltiplos modelos produzidos no lote
+  const [producedModels, setProducedModels] = useState<
+    Array<{ productId: string; productName: string; quantity: number }>
+  >([
+    {
+      productId: products[0]?.id || "",
+      productName: products[0]?.name || "Vela Aromática Artesanal",
+      quantity: 10,
+    },
+  ]);
+
+  // Quantidade total calculada a partir de todos os modelos
+  const unitsToProduce = Math.max(
+    1,
+    producedModels.reduce((acc, m) => acc + (Number(m.quantity) || 0), 0)
+  );
+
+  const handleAddModel = () => {
+    const nextProd =
+      products.find((p) => !producedModels.some((m) => m.productId === p.id)) || products[0];
+    if (nextProd) {
+      setProducedModels((prev) => [
+        ...prev,
+        {
+          productId: nextProd.id,
+          productName: nextProd.name,
+          quantity: 5,
+        },
+      ]);
+    }
+  };
+
+  const handleRemoveModel = (idx: number) => {
+    if (producedModels.length <= 1) return;
+    setProducedModels((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleModelChange = (idx: number, field: "productId" | "quantity", val: any) => {
+    setProducedModels((prev) => {
+      const copy = [...prev];
+      if (field === "productId") {
+        const p = products.find((prod) => prod.id === val);
+        copy[idx] = { ...copy[idx], productId: val, productName: p?.name || "" };
+      } else {
+        copy[idx] = { ...copy[idx], quantity: Math.max(1, parseInt(val, 10) || 1) };
+      }
+      return copy;
+    });
+  };
 
   // Vínculo aos Insumos do Banco de Dados
-  const ceraFromDb = rawMaterials.find((m) => m.name.toLowerCase().includes("cera") || m.category === "CERA");
-  const essenciaFromDb = rawMaterials.find((m) => m.name.toLowerCase().includes("essência") || m.name.toLowerCase().includes("essencia") || m.category === "ESSENCIA");
+  const ceraFromDb = rawMaterials.find(
+    (m) => m.name.toLowerCase().includes("cera") || m.category === "CERA"
+  );
+  const essenciaFromDb = rawMaterials.find(
+    (m) =>
+      m.name.toLowerCase().includes("essência") ||
+      m.name.toLowerCase().includes("essencia") ||
+      m.category === "ESSENCIA"
+  );
   const pavioFromDb = rawMaterials.find((m) => m.name.toLowerCase().includes("pavio"));
-  const packagingFromDb = packagings[0];
-
-  const [ceraId, setCeraId] = useState(ceraFromDb?.id || "");
-  const [essenciaId, setEssenciaId] = useState(essenciaFromDb?.id || "");
-  const [packagingId, setPackagingId] = useState(packagingFromDb?.id || "");
 
   // 1. CERA (Preço da última compra por kg / 1000g)
-  const [ceraPurchasePricePerKg, setCeraPurchasePricePerKg] = useState(40.00); // R$ 40/kg
+  const [ceraId, setCeraId] = useState(ceraFromDb?.id || "");
+  const [ceraPurchasePricePerKg, setCeraPurchasePricePerKg] = useState(
+    Number(ceraFromDb?.unitCost ? Number(ceraFromDb.unitCost) * 1000 : 40.0)
+  );
   const [ceraGramsPerUnit, setCeraGramsPerUnit] = useState(100); // 100g por vela
 
   // 2. ESSÊNCIA (Preço da última compra por litro / 1000ml)
-  const [essenciaPurchasePricePerLiter, setEssenciaPurchasePricePerLiter] = useState(120.00); // R$ 120/litro
+  const [essenciaId, setEssenciaId] = useState(essenciaFromDb?.id || "");
+  const [essenciaPurchasePricePerLiter, setEssenciaPurchasePricePerLiter] = useState(
+    Number(essenciaFromDb?.unitCost ? Number(essenciaFromDb.unitCost) * 1000 : 120.0)
+  );
   const [essenciaMlPerUnit, setEssenciaMlPerUnit] = useState(10); // 10ml por vela
 
   // 3. PAVIO & ILHÓS (Unidade)
-  const [pavioUnitPrice, setPavioUnitPrice] = useState(0.80);
+  const [pavioUnitPrice, setPavioUnitPrice] = useState(
+    Number(pavioFromDb?.unitCost || 0.8)
+  );
 
   // 4. CORANTE (Gotas/g)
-  const [coranteUnitPrice, setCoranteUnitPrice] = useState(0.20);
+  const [coranteUnitPrice, setCoranteUnitPrice] = useState(0.2);
 
-  // 5. POTE / VASILHA
-  const [selectedPoteId, setSelectedPoteId] = useState("pote_canelado_madeira");
-  const [customPotePrice, setCustomPotePrice] = useState(8.20);
+  // 5. POTE / VASILHA (Puxado diretamente do estoque de embalagens)
+  const defaultPote =
+    packagings.find(
+      (p) =>
+        p.name.toLowerCase().includes("pote") ||
+        p.name.toLowerCase().includes("vidro") ||
+        p.name.toLowerCase().includes("lata")
+    ) || packagings[0];
 
-  // 6. RÓTULO & EMBALAGEM
-  const [rotuloEmbalagemPrice, setRotuloEmbalagemPrice] = useState(1.50);
+  const [selectedPoteId, setSelectedPoteId] = useState(defaultPote?.id || "");
+  const [customPotePrice, setCustomPotePrice] = useState(
+    Number(defaultPote?.unitCost || 5.8)
+  );
 
-  // 7. INSUMOS FIXOS OPERACIONAIS (Gás, Energia, Mão de Obra, Perda 10%)
-  const [gasCost, setGasCost] = useState(0.20);
+  // 6. EMBALAGEM DE ENTREGA / TRANSPORTE (Puxada diretamente do estoque)
+  const defaultDeliveryPack = packagings.find(
+    (p) =>
+      p.name.toLowerCase().includes("sacola") ||
+      p.name.toLowerCase().includes("caixa") ||
+      p.name.toLowerCase().includes("entrega")
+  );
+  const [deliveryPackagingId, setDeliveryPackagingId] = useState(
+    defaultDeliveryPack?.id || ""
+  );
+  const [deliveryPackagingPrice, setDeliveryPackagingPrice] = useState(
+    Number(defaultDeliveryPack?.unitCost || 2.5)
+  );
+  const [deliveryPackagingQty, setDeliveryPackagingQty] = useState(1);
+
+  // 7. RÓTULO ADICIONAL (se houver)
+  const [rotuloEmbalagemPrice, setRotuloEmbalagemPrice] = useState(1.5);
+
+  // 8. INSUMOS FIXOS OPERACIONAIS (Gás, Energia, Mão de Obra, Perda 10%)
+  const [gasCost, setGasCost] = useState(0.2);
   const [energyCost, setEnergyCost] = useState(0.45);
   const [laborHours, setLaborHours] = useState(2); // 2 horas de produção
-  const laborHourlyRate = 60.00 / 8; // R$ 60/dia dividido por 8h = R$ 7,50/h
-  const [includeLossMargin, setIncludeLossMargin] = useState(true); // 10% perda de insumos
+  const laborHourlyRate = 60.0 / 8; // R$ 7,50/h
+  const [includeLossMargin, setIncludeLossMargin] = useState(true);
 
   // CÁLCULOS AUTOMÁTICOS INSTANTÂNEOS
   const ceraPricePerGram = ceraPurchasePricePerKg / 1000;
@@ -103,28 +187,46 @@ export function ProductionClientView({
 
   const pavioCostTotal = unitsToProduce * pavioUnitPrice;
   const coranteCostTotal = unitsToProduce * coranteUnitPrice;
-  const poteCostTotal = unitsToProduce * customPotePrice;
-  const embalagemCostTotal = unitsToProduce * rotuloEmbalagemPrice;
+  const poteCostTotal = selectedPoteId ? unitsToProduce * customPotePrice : 0;
+  const deliveryPackCostTotal = deliveryPackagingId
+    ? deliveryPackagingQty * deliveryPackagingPrice
+    : 0;
+  const embalagemCostTotal =
+    poteCostTotal + deliveryPackCostTotal + unitsToProduce * rotuloEmbalagemPrice;
 
   const rawMaterialsSubtotal =
-    ceraCostTotal + essenciaCostTotal + pavioCostTotal + coranteCostTotal + poteCostTotal + embalagemCostTotal;
+    ceraCostTotal +
+    essenciaCostTotal +
+    pavioCostTotal +
+    coranteCostTotal +
+    embalagemCostTotal;
 
-  const technicalLossAmount = includeLossMargin ? rawMaterialsSubtotal * 0.10 : 0;
+  const technicalLossAmount = includeLossMargin ? rawMaterialsSubtotal * 0.1 : 0;
   const totalRawMaterialsWithLoss = rawMaterialsSubtotal + technicalLossAmount;
 
   const calculatedLaborCost = laborHours * laborHourlyRate;
-  const totalBatchCost = totalRawMaterialsWithLoss + gasCost + energyCost + calculatedLaborCost;
+  const totalBatchCost =
+    totalRawMaterialsWithLoss + gasCost + energyCost + calculatedLaborCost;
   const unitCost = unitsToProduce > 0 ? totalBatchCost / unitsToProduce : 0;
-
-  // Preço Sugerido com Margem de Lucro 50% e 100%
   const suggestedPrice50 = unitCost * 1.5;
   const suggestedPrice100 = unitCost * 2.0;
 
-  const handlePoteChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const pId = e.target.value;
-    setSelectedPoteId(pId);
-    const found = POTES_CATALOGO.find((p) => p.id === pId);
-    if (found) setCustomPotePrice(found.price);
+  const handlePoteSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const packId = e.target.value;
+    setSelectedPoteId(packId);
+    const found = packagings.find((p) => p.id === packId);
+    if (found) {
+      setCustomPotePrice(Number(found.unitCost || 0));
+    }
+  };
+
+  const handleDeliveryPackChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const packId = e.target.value;
+    setDeliveryPackagingId(packId);
+    const found = packagings.find((p) => p.id === packId);
+    if (found) {
+      setDeliveryPackagingPrice(Number(found.unitCost || 0));
+    }
   };
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -132,7 +234,19 @@ export function ProductionClientView({
     setLoading(true);
     setErrorMsg(null);
 
-    const notesSummary = `Item: ${productName} (${unitsToProduce} un). Cera: ${unitsToProduce * ceraGramsPerUnit}g (R$ ${ceraCostTotal.toFixed(2)}). Essência: ${unitsToProduce * essenciaMlPerUnit}ml (R$ ${essenciaCostTotal.toFixed(2)}). Potes: R$ ${poteCostTotal.toFixed(2)}. Pavio/Corante/Emb: R$ ${(pavioCostTotal + coranteCostTotal + embalagemCostTotal).toFixed(2)}. Perda 10%: R$ ${technicalLossAmount.toFixed(2)}. Custo Unitário: R$ ${unitCost.toFixed(2)}/peça.`;
+    const modelsSummary = producedModels
+      .map((m) => `${m.quantity} un de ${m.productName}`)
+      .join(", ");
+
+    const notesSummary = `Modelos: [${modelsSummary}] (Total: ${unitsToProduce} un). Cera: ${
+      unitsToProduce * ceraGramsPerUnit
+    }g (R$ ${ceraCostTotal.toFixed(2)}). Essência: ${
+      unitsToProduce * essenciaMlPerUnit
+    }ml (R$ ${essenciaCostTotal.toFixed(2)}). Embalagens/Potes: R$ ${embalagemCostTotal.toFixed(
+      2
+    )}. Perda 10%: R$ ${technicalLossAmount.toFixed(
+      2
+    )}. Custo Unitário Médio: R$ ${unitCost.toFixed(2)}/peça.`;
 
     // Constrói consumos reais para dar baixa no estoque
     const ingredientConsumptions: any[] = [];
@@ -161,12 +275,20 @@ export function ProductionClientView({
       });
     }
 
+    // Consumo de Vasilha/Pote e Embalagem de Entrega
     const packagingConsumptions: any[] = [];
-    if (packagingId) {
+    if (selectedPoteId) {
       packagingConsumptions.push({
-        packagingId,
+        packagingId: selectedPoteId,
         quantityUsed: unitsToProduce,
         unitCost: customPotePrice,
+      });
+    }
+    if (deliveryPackagingId) {
+      packagingConsumptions.push({
+        packagingId: deliveryPackagingId,
+        quantityUsed: deliveryPackagingQty,
+        unitCost: deliveryPackagingPrice,
       });
     }
 
@@ -176,11 +298,12 @@ export function ProductionClientView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           batchNumber,
-          productId: selectedProductId || null,
+          productId: producedModels[0]?.productId || null,
+          producedProducts: producedModels,
           costCenter,
           quantityProduced: unitsToProduce,
           materialCost: parseFloat(totalRawMaterialsWithLoss.toFixed(2)),
-          packagingCost: parseFloat((poteCostTotal + embalagemCostTotal).toFixed(2)),
+          packagingCost: parseFloat(embalagemCostTotal.toFixed(2)),
           gasCost: parseFloat(gasCost.toFixed(2)),
           energyCost: parseFloat(energyCost.toFixed(2)),
           laborCost: parseFloat(calculatedLaborCost.toFixed(2)),
@@ -332,74 +455,113 @@ export function ProductionClientView({
             )}
 
             <form onSubmit={handleCreate} className="space-y-4 text-xs">
-              {/* Identificação Básica */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
+              {/* Identificação Básica e Centro de Custo */}
+              <div className="flex items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700">
+                <div className="flex-1">
                   <label className="block text-[11px] font-semibold text-slate-500 mb-1">
                     Centro Operacional
                   </label>
                   <select
                     value={costCenter}
                     onChange={(e: any) => setCostCenter(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                    className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
                   >
                     <option value="VELAS">Velas — D.A. Com Carinho</option>
                     <option value="RESINAS">Resinas — D.A. Com Carinho</option>
                   </select>
                 </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                    Produto do Catálogo Oficial
-                  </label>
-                  {products.length > 0 ? (
-                    <select
-                      value={selectedProductId}
-                      onChange={(e) => {
-                        const pId = e.target.value;
-                        setSelectedProductId(pId);
-                        const found = products.find((p) => p.id === pId);
-                        if (found) setProductName(found.name);
-                      }}
-                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
-                    >
-                      <option value="">Item Avulso / Não cadastrado</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      type="text"
-                      required
-                      value={productName}
-                      onChange={(e) => setProductName(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
-                    />
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 mb-1">
-                    Quantidade a Produzir (unidades) *
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    required
-                    value={unitsToProduce}
-                    onChange={(e) => setUnitsToProduce(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-extrabold text-amber-600 dark:text-amber-400"
-                  />
+                <div className="text-right">
+                  <span className="block text-[10px] uppercase font-bold text-slate-400">Total do Lote</span>
+                  <span className="text-lg font-black text-amber-600 dark:text-amber-400">
+                    {unitsToProduce} un
+                  </span>
                 </div>
               </div>
 
-              {/* 1. Insumos da Vela: Cera & Essência */}
+              {/* 1. Modelos de Produtos Fabricados neste Lote (Multi-modelos) */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 dark:text-white uppercase text-[10px] tracking-wider block">
+                    1. Modelos Fabricados no Lote ({producedModels.length} {producedModels.length === 1 ? "modelo" : "modelos"})
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleAddModel}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Adicionar Outro Modelo
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  {producedModels.map((model, idx) => (
+                    <div
+                      key={idx}
+                      className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 grid grid-cols-12 gap-2 items-center"
+                    >
+                      <div className="col-span-8">
+                        <label className="block text-[10px] text-slate-500 mb-0.5">
+                          Modelo / Produto do Catálogo
+                        </label>
+                        {products.length > 0 ? (
+                          <select
+                            value={model.productId}
+                            onChange={(e) => handleModelChange(idx, "productId", e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-semibold text-xs text-slate-900 dark:text-white"
+                          >
+                            <option value="">Selecione o produto...</option>
+                            {products.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} {p.categoryRef ? `[${p.categoryRef.name}]` : ""} (Estoque atual: {p.stockQuantity} un)
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Nome do produto"
+                            value={model.productName}
+                            onChange={(e) => handleModelChange(idx, "productId", e.target.value)}
+                            className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border rounded-lg text-xs"
+                          />
+                        )}
+                      </div>
+
+                      <div className="col-span-3">
+                        <label className="block text-[10px] text-slate-500 mb-0.5">
+                          Qtd Fabricada
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          required
+                          value={model.quantity}
+                          onChange={(e) => handleModelChange(idx, "quantity", e.target.value)}
+                          className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-extrabold text-amber-600 dark:text-amber-400 text-center text-xs"
+                        />
+                      </div>
+
+                      <div className="col-span-1 text-right pt-4">
+                        {producedModels.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveModel(idx)}
+                            className="text-slate-400 hover:text-rose-500 p-1"
+                            title="Remover este modelo"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 2. Insumos da Vela: Cera & Essência */}
               <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
                 <span className="font-bold text-slate-900 dark:text-white uppercase text-[10px] tracking-wider block">
-                  1. Cera & Essência Aromática (Regra de Três da Última Compra)
+                  2. Cera & Essência Aromática (Regra de Três da Última Compra)
                 </span>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -459,45 +621,96 @@ export function ProductionClientView({
                 </div>
               </div>
 
-              {/* 2. Pote / Vasilha, Pavio e Corante */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+              {/* 3. Vasilha / Pote (Puxado do Estoque) e Embalagem de Entrega */}
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
                 <span className="font-bold text-slate-900 dark:text-white uppercase text-[10px] tracking-wider block">
-                  2. Vasilha / Pote, Pavio, Corante e Embalagem
+                  3. Vasilha / Pote & Embalagem de Entrega (Puxados do Estoque)
                 </span>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Vasilha / Pote */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
                   <div className="sm:col-span-2">
-                    <label className="block text-[10px] text-slate-500 mb-0.5">
-                      Selecione o Pote / Frasco
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Vasilha / Pote (Item do Estoque) *
                     </label>
                     <select
                       value={selectedPoteId}
-                      onChange={handlePoteChange}
-                      className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-semibold"
+                      onChange={handlePoteSelectChange}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-semibold text-xs text-slate-900 dark:text-white"
                     >
-                      {POTES_CATALOGO.map((p) => (
+                      <option value="">Sem pote / Pote fornecido pelo cliente (R$ 0,00)</option>
+                      {packagings.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.name} — {formatBRL(p.price)}
+                          {p.name} — Estoque: {p.currentStock} {p.unit} | Custo: {formatBRL(Number(p.unitCost))}
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] text-slate-500 mb-0.5">
-                      Valor Unitário Pote (R$)
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Valor Unit. Pote (R$)
                     </label>
                     <input
                       type="number"
                       step="0.01"
                       value={customPotePrice}
                       onChange={(e) => setCustomPotePrice(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-bold"
+                      className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold text-xs"
                     />
-                    <span className="text-[9px] text-amber-600 font-semibold">Total Potes: {formatBRL(poteCostTotal)}</span>
+                    <span className="text-[9px] text-amber-600 font-semibold">Total: {formatBRL(poteCostTotal)}</span>
                   </div>
                 </div>
 
+                {/* Embalagem de Entrega / Transporte */}
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Embalagem para Entrega / Transporte (Item do Estoque)
+                    </label>
+                    <select
+                      value={deliveryPackagingId}
+                      onChange={handleDeliveryPackChange}
+                      className="w-full px-2.5 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-semibold text-xs text-slate-900 dark:text-white"
+                    >
+                      <option value="">Nenhuma / Sem embalagem de entrega (R$ 0,00)</option>
+                      {packagings.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} — Estoque: {p.currentStock} {p.unit} | Custo: {formatBRL(Number(p.unitCost))}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Qtd Embalagens
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={deliveryPackagingQty}
+                      onChange={(e) => setDeliveryPackagingQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold text-xs"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-500 mb-0.5">
+                      Valor Unit. (R$)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={deliveryPackagingPrice}
+                      onChange={(e) => setDeliveryPackagingPrice(parseFloat(e.target.value) || 0)}
+                      className="w-full px-2 py-1 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold text-xs"
+                    />
+                    <span className="text-[9px] text-amber-600 font-semibold">Total: {formatBRL(deliveryPackCostTotal)}</span>
+                  </div>
+                </div>
+
+                {/* Pavio, Corante e Rótulo */}
                 <div className="grid grid-cols-3 gap-3 pt-1">
                   <div>
                     <label className="block text-[10px] text-slate-500 mb-0.5">
@@ -525,7 +738,7 @@ export function ProductionClientView({
                   </div>
                   <div>
                     <label className="block text-[10px] text-slate-500 mb-0.5">
-                      Rótulo & Caixa (R$/un)
+                      Rótulo / Adesivo (R$/un)
                     </label>
                     <input
                       type="number"

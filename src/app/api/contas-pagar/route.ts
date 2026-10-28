@@ -52,11 +52,62 @@ export async function POST(req: NextRequest) {
       scheduledDate,
       paymentType = "BOLETO",
       isFixed = false,
+      installmentsCount = 1,
       notes,
     } = body;
 
     if (!description || !costCenterId || !chartOfAccountId || !originalAmount || !dueDate) {
       return NextResponse.json({ error: "Campos obrigatórios ausentes" }, { status: 400 });
+    }
+
+    const totalAmount = Number(originalAmount);
+    const installments = Math.max(1, Math.min(60, Number(installmentsCount || 1)));
+    const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
+
+    if (installments > 1) {
+      const baseAmount = Math.floor((totalAmount / installments) * 100) / 100;
+      const firstAmount = parseFloat((totalAmount - baseAmount * (installments - 1)).toFixed(2));
+      const baseDate = new Date(dueDate);
+
+      const createdPayables = await db.$transaction(async (tx) => {
+        const list = [];
+        for (let i = 1; i <= installments; i++) {
+          const installmentDueDate = new Date(baseDate);
+          // Soma 1 mês por parcela
+          installmentDueDate.setMonth(installmentDueDate.getMonth() + (i - 1));
+
+          const item = await tx.accountPayable.create({
+            data: {
+              description: `${description} (${i}/${installments})`,
+              costCenterId,
+              chartOfAccountId,
+              supplierId: supplierId || null,
+              originalAmount: i === 1 ? firstAmount : baseAmount,
+              competenceDate: competenceDate ? new Date(competenceDate) : new Date(),
+              dueDate: installmentDueDate,
+              scheduledDate: scheduledDate ? new Date(scheduledDate) : null,
+              paymentType,
+              isFixed: Boolean(isFixed),
+              status: "EM_ABERTO",
+              notes: notes ? `${notes} (Parcela ${i}/${installments})` : `Parcela ${i}/${installments}`,
+            },
+          });
+          list.push(item);
+        }
+        return list;
+      });
+
+      await logAudit({
+        userId: user.id,
+        action: "CREATE",
+        entity: "AccountPayable",
+        entityId: createdPayables[0]?.id || "MULTIPLE",
+        newValues: { description, totalAmount, installments },
+        ipAddress,
+        description: `Lançamento parcelado de conta a pagar: ${description} em ${installments}x de R$ ${baseAmount.toFixed(2)}`,
+      });
+
+      return NextResponse.json({ success: true, payables: createdPayables, count: createdPayables.length });
     }
 
     const payable = await db.accountPayable.create({
@@ -76,7 +127,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
     await logAudit({
       userId: user.id,
       action: "CREATE",
@@ -154,6 +204,72 @@ export async function PUT(req: NextRequest) {
       });
 
       return NextResponse.json({ success: true, updated });
+    }
+
+    // AÇÃO: PARCELAR CONTA A PAGAR EXISTENTE
+    if (action === "parcelar") {
+      const installments = Math.max(2, Math.min(60, Number(body.installmentsCount || 2)));
+      const totalAmount = Number(existing.originalAmount);
+      const baseAmount = Math.floor((totalAmount / installments) * 100) / 100;
+      const firstInstallmentAmount = parseFloat((totalAmount - baseAmount * (installments - 1)).toFixed(2));
+      const intervalDays = Number(body.intervalDays || 30);
+
+      const originalDueDate = new Date(existing.dueDate);
+      const baseDesc = existing.description.replace(/\s*\(\d+\/\d+\)$/, "");
+
+      // Atualiza a primeira parcela aproveitando o registro existente
+      const updatedFirst = await db.accountPayable.update({
+        where: { id: existing.id },
+        data: {
+          description: `${baseDesc} (1/${installments})`,
+          originalAmount: firstInstallmentAmount,
+        },
+      });
+
+      // Cria as parcelas 2 até N
+      const newPayablesData = [];
+      for (let i = 2; i <= installments; i++) {
+        const nextDueDate = new Date(originalDueDate);
+        nextDueDate.setDate(nextDueDate.getDate() + (i - 1) * intervalDays);
+
+        newPayablesData.push({
+          description: `${baseDesc} (${i}/${installments})`,
+          costCenterId: existing.costCenterId,
+          chartOfAccountId: existing.chartOfAccountId,
+          supplierId: existing.supplierId,
+          originalAmount: baseAmount,
+          competenceDate: existing.competenceDate,
+          dueDate: nextDueDate,
+          scheduledDate: null,
+          paymentType: existing.paymentType,
+          isFixed: existing.isFixed,
+          status: "EM_ABERTO" as any,
+          notes: existing.notes
+            ? `${existing.notes} (Parcela ${i}/${installments})`
+            : `Parcela ${i}/${installments} desmembrada da conta original`,
+        });
+      }
+
+      if (newPayablesData.length > 0) {
+        await db.accountPayable.createMany({ data: newPayablesData });
+      }
+
+      const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
+      await logAudit({
+        userId: user.id,
+        action: "UPDATE",
+        entity: "AccountPayable",
+        entityId: id,
+        newValues: { installments, totalAmount, firstInstallmentAmount, baseAmount },
+        ipAddress,
+        description: `Parcelamento de conta a pagar: ${baseDesc} desmembrado em ${installments} parcelas`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: `Conta parcelada com sucesso em ${installments} parcelas.`,
+        firstPayable: updatedFirst,
+      });
     }
 
     // AÇÃO 2: EDITAR LANÇAMENTO EFETUADO

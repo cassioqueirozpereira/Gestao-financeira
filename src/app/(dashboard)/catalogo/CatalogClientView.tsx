@@ -14,6 +14,8 @@ import {
   DollarSign,
   Package,
   Plus,
+  Search,
+  Tag,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -34,6 +36,7 @@ export function CatalogClientView({
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Form states de criação
   const [createName, setCreateName] = useState("");
@@ -167,9 +170,25 @@ export function CatalogClientView({
   const formatBRL = (val: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
+  // Filtragem flexível por palavras-chave, nome, descrição e categoria oficial
+  const filteredProducts = products.filter((p) => {
+    if (!searchTerm.trim()) return true;
+    const tokens = searchTerm.toLowerCase().trim().split(/\s+/);
+    const searchTarget = [
+      p.name || "",
+      p.description || "",
+      p.categoryRef?.name || "",
+      categoryLabels[p.category] || p.category || "",
+    ]
+      .join(" ")
+      .toLowerCase();
+
+    return tokens.every((token) => searchTarget.includes(token));
+  });
+
   // Agrupamento por categorias
   const groupedProducts: Record<string, any[]> = {};
-  for (const p of products) {
+  for (const p of filteredProducts) {
     if (!groupedProducts[p.category]) groupedProducts[p.category] = [];
     groupedProducts[p.category].push(p);
   }
@@ -178,7 +197,7 @@ export function CatalogClientView({
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-          Total no Catálogo: {products.length} itens cadastrados
+          Total no Catálogo: {products.length} itens cadastrados {searchTerm && `(${filteredProducts.length} filtrados)`}
         </span>
         <button
           onClick={() => setShowCreateModal(true)}
@@ -187,6 +206,29 @@ export function CatalogClientView({
           <Plus className="w-4 h-4" />
           Novo Item no Catálogo
         </button>
+      </div>
+
+      {/* Barra de Pesquisa por Palavras-Chave e Categoria */}
+      <div className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-2.5 shadow-sm">
+        <div className="flex items-center gap-3">
+          <Search className="w-5 h-5 text-indigo-500 ml-2 shrink-0" />
+          <input
+            type="text"
+            placeholder="Pesquisar por palavras-chave, nome do produto, aroma, descrição ou categoria..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full bg-transparent text-sm font-medium text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm("")}
+              className="p-1 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition"
+              title="Limpar busca"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       {feedback && (
@@ -201,7 +243,24 @@ export function CatalogClientView({
 
       {/* Grid por Categorias */}
       <div className="space-y-8">
-        {Object.entries(groupedProducts).map(([category, items]) => (
+        {filteredProducts.length === 0 ? (
+          <div className="text-center py-12 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-sm">
+            <Search className="w-10 h-10 text-slate-400 mx-auto mb-3" />
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+              Nenhum produto encontrado para &quot;{searchTerm}&quot;
+            </h3>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">
+              Tente utilizar outras palavras-chave ou termos mais abrangentes de nome ou categoria.
+            </p>
+            <button
+              onClick={() => setSearchTerm("")}
+              className="mt-4 px-4 py-2 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-xl hover:bg-indigo-100 transition"
+            >
+              Limpar Pesquisa
+            </button>
+          </div>
+        ) : (
+          Object.entries(groupedProducts).map(([category, items]) => (
           <div key={category} className="space-y-3">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
               <Flame className="w-4 h-4 text-indigo-500" />
@@ -270,7 +329,8 @@ export function CatalogClientView({
               ))}
             </div>
           </div>
-        ))}
+        ))
+        )}
       </div>
 
       {/* Modal - Edição do Produto & Calculadora de Margem [Item 11] */}

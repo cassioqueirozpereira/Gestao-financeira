@@ -210,7 +210,7 @@ export function ContractsClientView({
     if (actionLoading[ct.id]) return;
     if (
       !confirm(
-        `Deseja realmente INATIVAR o contrato ${ct.contractNumber}? O status passará para CANCELADO e os títulos a vencer pendentes vinculados serão cancelados.`
+        `Deseja realmente CANCELAR o contrato ${ct.contractNumber}? O status passará para CANCELADO e todos os títulos a receber pendentes vinculados a este contrato serão EXCLUÍDOS automaticamente.`
       )
     ) {
       return;
@@ -227,10 +227,10 @@ export function ContractsClientView({
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erro ao inativar contrato");
+      if (!res.ok) throw new Error(data.error || "Erro ao cancelar contrato");
 
       setContracts(contracts.map((c) => (c.id === ct.id ? { ...c, status: "CANCELADO" } : c)));
-      setFeedback(`Contrato ${ct.contractNumber} inativado com sucesso.`);
+      setFeedback(`Contrato ${ct.contractNumber} cancelado. ${data.deletedReceivablesCount ?? "Os"} títulos a receber pendentes foram excluídos com sucesso.`);
       router.refresh();
     } catch (err: any) {
       alert(err.message);
@@ -584,10 +584,10 @@ export function ContractsClientView({
                                 onClick={() => handleInativar(ct)}
                                 disabled={actionLoading[ct.id]}
                                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-red-50 dark:bg-red-950/40 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-400 transition disabled:opacity-50"
-                                title="Inativar contrato e cancelar títulos a vencer pendentes"
+                                title="Cancelar contrato e excluir títulos a receber pendentes"
                               >
                                 <Ban className="w-3.5 h-3.5" />
-                                <span>Inativar</span>
+                                <span>Cancelar</span>
                               </button>
                             )}
                           </td>

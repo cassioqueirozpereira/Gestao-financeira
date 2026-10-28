@@ -190,10 +190,12 @@ export async function PUT(req: NextRequest) {
         data: { status: "CANCELADO" },
       });
 
-      // Cancela títulos a vencer em aberto vinculados a este contrato
-      await db.accountReceivable.updateMany({
-        where: { contractId: id, status: "A_RECEBER" },
-        data: { status: "CANCELADA" },
+      // Exclui automaticamente títulos a receber em aberto vinculados a este contrato
+      const deletedReceivables = await db.accountReceivable.deleteMany({
+        where: {
+          contractId: id,
+          status: { not: "RECEBIDA" },
+        },
       });
 
       await logAudit({
@@ -201,12 +203,12 @@ export async function PUT(req: NextRequest) {
         action: "STATUS_CHANGE",
         entity: "Contract",
         entityId: id,
-        newValues: { status: "CANCELADO" },
+        newValues: { status: "CANCELADO", deletedReceivablesCount: deletedReceivables.count },
         ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-        description: `Inativação de contrato ${contract.contractNumber}`,
+        description: `Cancelamento de contrato ${contract.contractNumber}. ${deletedReceivables.count} títulos a receber não recebidos foram excluídos automaticamente.`,
       });
 
-      return NextResponse.json({ success: true, contract: updated });
+      return NextResponse.json({ success: true, contract: updated, deletedReceivablesCount: deletedReceivables.count });
     }
 
     // AÇÃO 2: EDITAR CONTRATO
@@ -220,6 +222,15 @@ export async function PUT(req: NextRequest) {
       billingDay,
       status,
     } = body;
+
+    if (status === "CANCELADO" && contract.status !== "CANCELADO") {
+      await db.accountReceivable.deleteMany({
+        where: {
+          contractId: id,
+          status: { not: "RECEBIDA" },
+        },
+      });
+    }
 
     const updated = await db.contract.update({
       where: { id },

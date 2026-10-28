@@ -70,7 +70,15 @@ export function PayablesClientView({
     isFixed: false,
     competenceDate: new Date().toISOString().split("T")[0],
     notes: "",
+    isInstallment: false,
+    installmentsCount: 2,
   });
+
+  // Modal Parcelamento de Conta Existente
+  const [parcelingItem, setParcelingItem] = useState<any | null>(null);
+  const [parcelCount, setParcelCount] = useState(2);
+  const [parcelIntervalDays, setParcelIntervalDays] = useState(30);
+  const [parcelLoading, setParcelLoading] = useState(false);
 
   // Form states - Dar Baixa
   const [settleForm, setSettleForm] = useState({
@@ -100,22 +108,65 @@ export function PayablesClientView({
     setLoading(true);
     setFeedback(null);
     try {
+      const payload: any = {
+        ...form,
+        installmentsCount: form.isInstallment ? Number(form.installmentsCount) : 1,
+      };
+
       const res = await fetch("/api/contas-pagar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao criar lançamento");
 
       setShowCreateModal(false);
-      setPayables([data.payable, ...payables]);
-      setFeedback("Conta a pagar lançada com sucesso!");
+      if (data.payables) {
+        setPayables([...data.payables, ...payables]);
+        setFeedback(`${data.payables.length} parcelas lançadas com sucesso!`);
+      } else {
+        setPayables([data.payable, ...payables]);
+        setFeedback("Conta a pagar lançada com sucesso!");
+      }
       router.refresh();
     } catch (err: any) {
       alert(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleParcelSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!parcelingItem) return;
+    setParcelLoading(true);
+    try {
+      const res = await fetch("/api/contas-pagar", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: parcelingItem.id,
+          action: "parcelar",
+          installmentsCount: parcelCount,
+          intervalDays: parcelIntervalDays,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao parcelar conta");
+
+      setFeedback(`Conta parcelada com sucesso em ${parcelCount}x!`);
+      setParcelingItem(null);
+      router.refresh();
+
+      // Recarrega lista atualizada
+      const listRes = await fetch("/api/contas-pagar");
+      const listData = await listRes.json();
+      if (listData.payables) setPayables(listData.payables);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setParcelLoading(false);
     }
   };
 
@@ -645,14 +696,28 @@ export function PayablesClientView({
 
                       <td className="px-4 py-3.5 text-right space-x-2">
                         {!isPaid && (
-                          <button
-                            onClick={() => handleOpenSettle(p)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
-                            title="Dar Baixa de Pagamento"
-                          >
-                            <CheckSquare className="w-3.5 h-3.5" />
-                            <span>Baixar</span>
-                          </button>
+                          <>
+                            <button
+                              onClick={() => handleOpenSettle(p)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm transition"
+                              title="Dar Baixa de Pagamento"
+                            >
+                              <CheckSquare className="w-3.5 h-3.5" />
+                              <span>Baixar</span>
+                            </button>
+                            <button
+                              onClick={() => {
+                                setParcelingItem(p);
+                                setParcelCount(2);
+                                setParcelIntervalDays(30);
+                              }}
+                              className="inline-flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 transition"
+                              title="Adicionar parcelas e definir quantas serão"
+                            >
+                              <Repeat className="w-3.5 h-3.5" />
+                              <span>Parcelar</span>
+                            </button>
+                          </>
                         )}
                         <button
                           onClick={() => handleOpenEdit(p)}
@@ -822,6 +887,57 @@ export function PayablesClientView({
                     </span>
                   </label>
                 </div>
+              </div>
+
+              {/* Parcelamento de Nova Despesa */}
+              <div className="p-3 bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-800 dark:text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={form.isInstallment}
+                      onChange={(e) => setForm({ ...form, isInstallment: e.target.checked })}
+                      className="rounded text-indigo-600"
+                    />
+                    <span>Parcelar esta conta (adicionar parcelas)</span>
+                  </label>
+                  {form.isInstallment && (
+                    <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400">
+                      Geração Automática Mensal
+                    </span>
+                  )}
+                </div>
+
+                {form.isInstallment && (
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                        Quantas parcelas serão?
+                      </label>
+                      <select
+                        value={form.installmentsCount}
+                        onChange={(e) => setForm({ ...form, installmentsCount: Number(e.target.value) })}
+                        className="w-full px-2 py-1.5 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold"
+                      >
+                        {[2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 18, 24, 36, 48].map((n) => (
+                          <option key={n} value={n}>
+                            {n}x parcelas
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                        Valor aproximado por parcela
+                      </label>
+                      <div className="px-2 py-1.5 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-black text-indigo-600 dark:text-indigo-400">
+                        {form.originalAmount
+                          ? formatBRL(Number(form.originalAmount) / form.installmentsCount)
+                          : "R$ 0,00"}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 pt-3">
@@ -1039,6 +1155,109 @@ export function PayablesClientView({
                     Salvar Alterações
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Parcelar Conta Existente */}
+      {parcelingItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Repeat className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  Parcelar Conta a Pagar
+                </h3>
+              </div>
+              <button onClick={() => setParcelingItem(null)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleParcelSubmit} className="space-y-4 text-xs sm:text-sm">
+              <div className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase font-bold block">Conta a Parcelar</span>
+                <span className="font-bold text-slate-900 dark:text-white block mt-0.5">{parcelingItem.description}</span>
+                <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <span className="text-xs text-slate-500">Valor Total:</span>
+                  <span className="font-mono font-black text-sm text-indigo-600 dark:text-indigo-400">
+                    {formatBRL(Number(parcelingItem.originalAmount))}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Definir quantas parcelas serão *
+                </label>
+                <select
+                  value={parcelCount}
+                  onChange={(e) => setParcelCount(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                >
+                  {[2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 18, 24, 36, 48].map((n) => (
+                    <option key={n} value={n}>
+                      {n} parcelas ({n}x de ~{formatBRL(Number(parcelingItem.originalAmount) / n)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Intervalo entre parcelas
+                </label>
+                <select
+                  value={parcelIntervalDays}
+                  onChange={(e) => setParcelIntervalDays(Number(e.target.value))}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                >
+                  <option value={30}>Mensal (a cada 30 dias)</option>
+                  <option value={15}>Quinzenal (a cada 15 dias)</option>
+                  <option value={7}>Semanal (a cada 7 dias)</option>
+                </select>
+              </div>
+
+              {/* Prévia das parcelas */}
+              <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/40 rounded-xl space-y-1.5 max-h-40 overflow-y-auto">
+                <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase block">
+                  Simulação do Parcelamento
+                </span>
+                {Array.from({ length: parcelCount }).map((_, idx) => {
+                  const baseDueDate = new Date(parcelingItem.dueDate);
+                  baseDueDate.setDate(baseDueDate.getDate() + idx * parcelIntervalDays);
+                  const approxVal = Number(parcelingItem.originalAmount) / parcelCount;
+                  return (
+                    <div key={idx} className="flex justify-between text-xs py-0.5 border-b border-indigo-100 dark:border-indigo-950 last:border-0">
+                      <span className="text-slate-600 dark:text-slate-300">
+                        Parcela {idx + 1}/{parcelCount} — {formatDateBR(baseDueDate)}
+                      </span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">
+                        {formatBRL(approxVal)}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setParcelingItem(null)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={parcelLoading}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md"
+                >
+                  {parcelLoading ? "Gerando parcelas..." : `Confirmar ${parcelCount}x Parcelas`}
+                </button>
               </div>
             </form>
           </div>

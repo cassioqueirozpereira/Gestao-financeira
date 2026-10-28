@@ -17,6 +17,9 @@ const createSaleSchema = z.object({
   customerName: z.string().optional(),
   customerPhone: z.string().optional(),
   items: z.array(saleItemSchema).min(1, "A venda deve conter ao menos 1 item do catálogo"),
+  packagingId: z.string().optional(),
+  packagingQuantity: z.number().int().min(1).default(1),
+  packagingPrice: z.number().min(0).default(0),
   discountAmount: z.number().min(0, "O desconto não pode ser negativo").default(0),
   paymentMethod: z.string().default("PIX"),
   saleDate: z.string().optional(),
@@ -26,7 +29,7 @@ const createSaleSchema = z.object({
 
 export async function GET() {
   try {
-    const [orders, products, customers] = await Promise.all([
+    const [orders, products, customers, packagings] = await Promise.all([
       db.order.findMany({
         include: {
           customer: true,
@@ -43,9 +46,13 @@ export async function GET() {
       db.customer.findMany({
         orderBy: { name: "asc" },
       }),
+      db.packaging.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+      }),
     ]);
 
-    return NextResponse.json({ orders, products, customers });
+    return NextResponse.json({ orders, products, customers, packagings });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -75,6 +82,9 @@ export async function POST(req: NextRequest) {
       customerName,
       customerPhone,
       items,
+      packagingId,
+      packagingQuantity = 1,
+      packagingPrice = 0,
       discountAmount,
       paymentMethod,
       saleDate = new Date().toISOString(),
@@ -143,17 +153,42 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Trava de desconto: o desconto não pode superar o subtotal dos produtos
-    if (discountAmount > subtotal) {
+    // Conferência da embalagem selecionada (se houver)
+    let selectedPackaging: any = null;
+    let packagingTotal = 0;
+    if (packagingId) {
+      selectedPackaging = await db.packaging.findUnique({
+        where: { id: packagingId },
+      });
+
+      if (!selectedPackaging) {
+        return NextResponse.json({ error: "Embalagem selecionada não foi encontrada no estoque." }, { status: 400 });
+      }
+
+      if (selectedPackaging.currentStock < packagingQuantity) {
+        return NextResponse.json(
+          {
+            error: `Estoque insuficiente para a embalagem "${selectedPackaging.name}". Solicitado: ${packagingQuantity} un, Disponível em estoque: ${selectedPackaging.currentStock} un.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      packagingTotal = packagingQuantity * Number(packagingPrice || 0);
+    }
+
+    // Trava de desconto: o desconto não pode superar o subtotal dos produtos + embalagem
+    const grossTotal = subtotal + packagingTotal;
+    if (discountAmount > grossTotal) {
       return NextResponse.json(
         {
-          error: `O desconto concedido (R$ ${discountAmount.toFixed(2)}) não pode ser superior ao subtotal da venda (R$ ${subtotal.toFixed(2)}).`,
+          error: `O desconto concedido (R$ ${discountAmount.toFixed(2)}) não pode ser superior ao subtotal da venda (R$ ${grossTotal.toFixed(2)}).`,
         },
         { status: 400 }
       );
     }
 
-    const totalAmount = Math.max(0, subtotal - discountAmount);
+    const totalAmount = Math.max(0, grossTotal - discountAmount);
 
     // Determina o próximo número sequencial de venda de forma segura
     const year = new Date().getFullYear();
@@ -226,6 +261,33 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    // 4.1 Baixa automática de embalagem selecionada
+    if (selectedPackaging && packagingQuantity > 0) {
+      await db.packaging.update({
+        where: { id: selectedPackaging.id },
+        data: {
+          currentStock: { decrement: packagingQuantity },
+        },
+      });
+
+      await db.stockMovement.create({
+        data: {
+          itemType: "EMBALAGEM",
+          itemId: selectedPackaging.id,
+          itemName: selectedPackaging.name,
+          movementType: "SAIDA",
+          quantity: packagingQuantity,
+          unit: selectedPackaging.unit || "UN",
+          unitCost: selectedPackaging.unitCost,
+          totalCost: Number(selectedPackaging.unitCost) * packagingQuantity,
+          origin: "VENDA",
+          documentReference: order.orderNumber,
+          notes: `Baixa de embalagem para entrega na Venda ${order.orderNumber}. Valor de venda praticado: R$ ${Number(packagingPrice).toFixed(2)}`,
+          userId: user!.id,
+        },
+      });
+    }
+
     // 5. Emissão do Título a Vencer no Contas a Receber
     const costCenterVelas = await db.costCenter.findFirst({
       where: { code: "VELAS" },
@@ -236,6 +298,10 @@ export async function POST(req: NextRequest) {
     }) || await db.chartOfAccount.findFirst({
       where: { type: "RECEITA_OPERACIONAL" },
     }) || await db.chartOfAccount.findFirst();
+
+    const packagingNote = selectedPackaging
+      ? ` | Embalagem: ${selectedPackaging.name} (${packagingQuantity} un x R$ ${Number(packagingPrice).toFixed(2)})`
+      : "";
 
     const receivable = await db.accountReceivable.create({
       data: {
@@ -249,7 +315,7 @@ export async function POST(req: NextRequest) {
         dueDate: new Date(dueDate),
         status: "A_RECEBER",
         paymentType: paymentMethod,
-        notes: `Título gerado automaticamente pela venda de velas/resinas ${order.orderNumber}. Forma de pagamento: ${paymentMethod}`,
+        notes: `Título gerado automaticamente pela venda ${order.orderNumber}. Forma de pgto: ${paymentMethod}${packagingNote}`,
       },
     });
 

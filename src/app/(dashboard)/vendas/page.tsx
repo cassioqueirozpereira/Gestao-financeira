@@ -17,12 +17,14 @@ import {
   Edit2,
   Ban,
   X,
+  Package,
 } from "lucide-react";
 
 export default function VendasPage() {
   const [orders, setOrders] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
+  const [packagings, setPackagings] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState<string | null>(null);
 
@@ -34,6 +36,12 @@ export default function VendasPage() {
   const [dueDate, setDueDate] = useState(new Date().toISOString().split("T")[0]);
   const [paymentMethod, setPaymentMethod] = useState("PIX");
   const [discountAmount, setDiscountAmount] = useState("0");
+
+  // Embalagem para Entrega na Venda
+  const [hasPackaging, setHasPackaging] = useState(false);
+  const [selectedPackagingId, setSelectedPackagingId] = useState("");
+  const [packagingQuantity, setPackagingQuantity] = useState(1);
+  const [packagingPrice, setPackagingPrice] = useState("0.00");
 
   // Modal Edição
   const [editingOrder, setEditingOrder] = useState<any | null>(null);
@@ -63,6 +71,12 @@ export default function VendasPage() {
         setCustomers(data.customers);
         if (data.customers.length > 0 && !customerId) {
           setCustomerId(data.customers[0].id);
+        }
+      }
+      if (data.packagings) {
+        setPackagings(data.packagings);
+        if (data.packagings.length > 0 && !selectedPackagingId) {
+          setSelectedPackagingId(data.packagings[0].id);
         }
       }
     } catch {
@@ -108,8 +122,11 @@ export default function VendasPage() {
     setItems(updated);
   };
 
+  const packagingTotal = hasPackaging
+    ? (parseInt(String(packagingQuantity), 10) || 1) * (parseFloat(packagingPrice) || 0)
+    : 0;
   const subtotal = items.reduce((s, it) => s + it.quantity * it.unitPrice, 0);
-  const totalSale = Math.max(0, subtotal - (parseFloat(discountAmount) || 0));
+  const totalSale = Math.max(0, subtotal + packagingTotal - (parseFloat(discountAmount) || 0));
 
   const handleCreateSale = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,6 +146,9 @@ export default function VendasPage() {
           customerId: customerId || undefined,
           customerName: !customerId ? newCustomerName : undefined,
           items,
+          packagingId: hasPackaging ? selectedPackagingId : undefined,
+          packagingQuantity: hasPackaging ? (parseInt(String(packagingQuantity), 10) || 1) : undefined,
+          packagingPrice: hasPackaging ? (parseFloat(packagingPrice) || 0) : undefined,
           discountAmount: parseFloat(discountAmount),
           paymentMethod,
           saleDate,
@@ -143,6 +163,9 @@ export default function VendasPage() {
       setShowModal(false);
       setItems([]);
       setDiscountAmount("0");
+      setHasPackaging(false);
+      setPackagingQuantity(1);
+      setPackagingPrice("0.00");
       setFeedback(
         `Venda ${data.order.orderNumber} registrada com sucesso! Título a vencer emitido no Contas a Receber.`
       );
@@ -707,6 +730,87 @@ export default function VendasPage() {
                     className="w-28 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-rose-600 text-right text-xs"
                   />
                 </div>
+              </div>
+
+              {/* Seção Embalagem para Entrega / Transporte com Baixa Automática de Estoque */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hasPackaging}
+                      onChange={(e) => setHasPackaging(e.target.checked)}
+                      className="rounded text-indigo-600 w-4 h-4"
+                    />
+                    <span className="font-bold text-slate-800 dark:text-slate-200 text-xs flex items-center gap-1.5">
+                      <Package className="w-4 h-4 text-indigo-500" />
+                      Incluir Embalagem / Sacola / Caixa de Entrega
+                    </span>
+                  </label>
+                  {hasPackaging && (
+                    <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full">
+                      Baixa automática de estoque
+                    </span>
+                  )}
+                </div>
+
+                {hasPackaging && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div className="sm:col-span-1">
+                      <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">
+                        Embalagem do Estoque *
+                      </label>
+                      <select
+                        value={selectedPackagingId}
+                        onChange={(e) => setSelectedPackagingId(e.target.value)}
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-xs"
+                      >
+                        {packagings.length === 0 ? (
+                          <option value="">Nenhuma embalagem cadastrada</option>
+                        ) : (
+                          packagings.map((pkg) => (
+                            <option key={pkg.id} value={pkg.id}>
+                              {pkg.name} (Saldo: {pkg.currentStock} {pkg.unit || "un"})
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">
+                        Qtd a Baixar
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={packagingQuantity}
+                        onChange={(e) =>
+                          setPackagingQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))
+                        }
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-xs text-center"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-semibold text-slate-400 uppercase mb-1">
+                        Valor de Venda da Embalagem (R$)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={packagingPrice}
+                        onChange={(e) => setPackagingPrice(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full px-2.5 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-xs text-indigo-600"
+                      />
+                      <span className="text-[9px] text-slate-400 block mt-0.5">
+                        Digite 0,00 para cortesia ou o valor cobrado.
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Totalizador da Venda e Emissão de Título */}
