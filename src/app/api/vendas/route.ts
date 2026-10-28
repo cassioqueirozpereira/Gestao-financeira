@@ -1,7 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, checkUserRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { z } from "zod";
+
+// Schema de validação Zod para os itens da venda
+const saleItemSchema = z.object({
+  productId: z.string().min(1, "ID do produto é obrigatório"),
+  quantity: z.number().int().min(1, "A quantidade deve ser de no mínimo 1 unidade"),
+  unitPrice: z.number().min(0, "O preço unitário não pode ser negativo").optional(),
+});
+
+// Schema de validação Zod para registro de venda
+const createSaleSchema = z.object({
+  customerId: z.string().optional(),
+  customerName: z.string().optional(),
+  customerPhone: z.string().optional(),
+  items: z.array(saleItemSchema).min(1, "A venda deve conter ao menos 1 item do catálogo"),
+  discountAmount: z.number().min(0, "O desconto não pode ser negativo").default(0),
+  paymentMethod: z.string().default("PIX"),
+  saleDate: z.string().optional(),
+  dueDate: z.string().optional(),
+  channel: z.string().default("Balcão / Instagram"),
+});
 
 export async function GET() {
   try {
@@ -33,24 +54,33 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    
+    // RBAC: Apenas ADMIN, FINANCIAL e OPERATOR podem registrar vendas
+    const roleCheck = checkUserRole(user, ["ADMIN", "FINANCIAL", "OPERATOR"]);
+    if (!roleCheck.allowed) {
+      return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+    }
 
-    const body = await req.json();
+    const rawBody = await req.json();
+
+    // 1. Validação estrita de schema com Zod
+    const parsed = createSaleSchema.safeParse(rawBody);
+    if (!parsed.success) {
+      const errorMsg = parsed.error.errors.map((e) => e.message).join(", ");
+      return NextResponse.json({ error: errorMsg }, { status: 400 });
+    }
+
     const {
       customerId,
       customerName,
       customerPhone,
-      items, // array: [{ productId, quantity, unitPrice }]
-      discountAmount = 0,
-      paymentMethod = "PIX",
+      items,
+      discountAmount,
+      paymentMethod,
       saleDate = new Date().toISOString(),
       dueDate = new Date().toISOString(),
-      channel = "Balcão / Instagram",
-    } = body;
-
-    if (!items || items.length === 0) {
-      return NextResponse.json({ error: "A venda deve conter ao menos 1 item do catálogo" }, { status: 400 });
-    }
+      channel,
+    } = parsed.data;
 
     let targetCustomerId = customerId;
 
@@ -74,22 +104,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Cliente obrigatório para registrar venda" }, { status: 400 });
     }
 
-    // Calcula total dos itens
+    // 2. Conferência de cada item no banco de dados (Preço Oficial e Trava de Estoque)
     let subtotal = 0;
-    const validatedItems = items.map((item: any) => {
-      const q = parseInt(item.quantity, 10) || 1;
-      const price = parseFloat(item.unitPrice) || 0;
-      const totalItem = q * price;
-      subtotal += totalItem;
-      return {
-        productId: item.productId,
-        quantity: q,
-        unitPrice: price,
-        totalPrice: totalItem,
-      };
-    });
+    const validatedItems = [];
 
-    const totalAmount = Math.max(0, subtotal - (parseFloat(discountAmount) || 0));
+    for (const item of items) {
+      const product = await db.product.findUnique({
+        where: { id: item.productId },
+      });
+
+      if (!product) {
+        return NextResponse.json(
+          { error: `Produto com ID ${item.productId} não foi encontrado no catálogo.` },
+          { status: 400 }
+        );
+      }
+
+      // Trava de estoque: Rejeita se estoque for insuficiente antes de tocar no banco
+      if (product.stockQuantity < item.quantity) {
+        return NextResponse.json(
+          {
+            error: `Estoque insuficiente para "${product.name}". Solicitado: ${item.quantity} un, Disponível em estoque: ${product.stockQuantity} un.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Preço oficial do banco para blindar contra manipulação do frontend
+      const officialPrice = Number(product.basePrice);
+      const totalItem = item.quantity * officialPrice;
+      subtotal += totalItem;
+
+      validatedItems.push({
+        productId: product.id,
+        quantity: item.quantity,
+        unitPrice: officialPrice,
+        totalPrice: totalItem,
+      });
+    }
+
+    // Trava de desconto: o desconto não pode superar o subtotal dos produtos
+    if (discountAmount > subtotal) {
+      return NextResponse.json(
+        {
+          error: `O desconto concedido (R$ ${discountAmount.toFixed(2)}) não pode ser superior ao subtotal da venda (R$ ${subtotal.toFixed(2)}).`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const totalAmount = Math.max(0, subtotal - discountAmount);
 
     // Determina o próximo número sequencial de venda de forma segura
     const year = new Date().getFullYear();
@@ -113,7 +177,7 @@ export async function POST(req: NextRequest) {
       nextSeq = count + 1;
     }
 
-    // 1. Cria a Venda / Order com tentativa de desempate em caso de concorrência
+    // 3. Criação da Venda / Order
     let order: any = null;
     let finalOrderNumber = "";
     let attempts = 0;
@@ -126,7 +190,7 @@ export async function POST(req: NextRequest) {
             orderNumber: finalOrderNumber,
             customerId: targetCustomerId,
             totalAmount,
-            discountAmount: parseFloat(discountAmount) || 0,
+            discountAmount,
             channel,
             status: "CONCLUIDO",
             createdAt: new Date(saleDate),
@@ -140,7 +204,6 @@ export async function POST(req: NextRequest) {
           },
         });
       } catch (err: any) {
-        // Se der conflito de chave única (P2002) no orderNumber por clique simultâneo, tenta o próximo número
         if (err.code === "P2002" && JSON.stringify(err.meta || "").includes("orderNumber")) {
           attempts++;
         } else {
@@ -153,7 +216,7 @@ export async function POST(req: NextRequest) {
       throw new Error("Não foi possível gerar um número único de pedido. Tente novamente.");
     }
 
-    // 2. Dá baixa no estoque de cada produto
+    // 4. Baixa segura no estoque de cada produto
     for (const it of validatedItems) {
       await db.product.update({
         where: { id: it.productId },
@@ -163,7 +226,7 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Emite automaticamente o Título a Vencer no Contas a Receber
+    // 5. Emissão do Título a Vencer no Contas a Receber
     const costCenterVelas = await db.costCenter.findFirst({
       where: { code: "VELAS" },
     }) || await db.costCenter.findFirst();
@@ -191,7 +254,7 @@ export async function POST(req: NextRequest) {
     });
 
     await logAudit({
-      userId: user.id,
+      userId: user!.id,
       action: "CREATE",
       entity: "Order",
       entityId: order.id,
@@ -209,8 +272,6 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
-
     const body = await req.json();
     const { id, action = "edit", channel, discountAmount, status, items } = body;
 
@@ -224,6 +285,12 @@ export async function PUT(req: NextRequest) {
 
     // AÇÃO 1: INATIVAR / CANCELAR VENDA (E DEVOLVER ITENS AO ESTOQUE)
     if (action === "inactivate" || status === "CANCELADO") {
+      // RBAC: Apenas ADMIN e FINANCIAL podem inativar/cancelar vendas
+      const roleCheck = checkUserRole(user, ["ADMIN", "FINANCIAL"]);
+      if (!roleCheck.allowed) {
+        return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+      }
+
       if (existingOrder.status === "CANCELADO") {
         return NextResponse.json({ error: "Esta venda já está cancelada/inativada" }, { status: 400 });
       }
@@ -252,7 +319,7 @@ export async function PUT(req: NextRequest) {
       });
 
       await logAudit({
-        userId: user.id,
+        userId: user!.id,
         action: "STATUS_CHANGE",
         entity: "Order",
         entityId: id,
@@ -265,6 +332,12 @@ export async function PUT(req: NextRequest) {
     }
 
     // AÇÃO 2: EDITAR VENDA (Itens, Canal, Desconto)
+    // RBAC: ADMIN, FINANCIAL e OPERATOR podem editar dados da venda
+    const roleCheck = checkUserRole(user, ["ADMIN", "FINANCIAL", "OPERATOR"]);
+    if (!roleCheck.allowed) {
+      return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+    }
+
     let validatedItems = null;
     let newSubtotal = 0;
 
@@ -273,19 +346,50 @@ export async function PUT(req: NextRequest) {
         return NextResponse.json({ error: "A venda deve conter pelo menos 1 item." }, { status: 400 });
       }
 
-      validatedItems = items.map((item: any) => {
-        const q = Math.max(1, parseInt(item.quantity, 10) || 1);
-        const price = parseFloat(item.unitPrice) || 0;
-        const totalItem = q * price;
+      // Validar cada item contra o banco de dados e checar estoque
+      validatedItems = [];
+      for (const rawItem of items) {
+        const q = Math.max(1, parseInt(rawItem.quantity, 10) || 1);
+        const product = await db.product.findUnique({
+          where: { id: rawItem.productId },
+        });
+
+        if (!product) {
+          return NextResponse.json(
+            { error: `Produto ${rawItem.productId} não encontrado no catálogo.` },
+            { status: 400 }
+          );
+        }
+
+        // Se a venda estiver ativa, calcula a diferença de estoque necessária
+        if (existingOrder.status !== "CANCELADO") {
+          const prevItem = existingOrder.items.find((x) => x.productId === rawItem.productId);
+          const prevQuantity = prevItem ? prevItem.quantity : 0;
+          const diff = q - prevQuantity;
+
+          // Se está pedindo mais unidades do que tinha antes, confere se há saldo em estoque
+          if (diff > 0 && product.stockQuantity < diff) {
+            return NextResponse.json(
+              {
+                error: `Estoque insuficiente para "${product.name}". Adicional solicitado: ${diff} un, disponível no estoque: ${product.stockQuantity} un.`,
+              },
+              { status: 400 }
+            );
+          }
+        }
+
+        const officialPrice = Number(product.basePrice);
+        const totalItem = q * officialPrice;
         newSubtotal += totalItem;
-        return {
+
+        validatedItems.push({
           orderId: id,
-          productId: item.productId,
+          productId: product.id,
           quantity: q,
-          unitPrice: price,
+          unitPrice: officialPrice,
           totalPrice: totalItem,
-        };
-      });
+        });
+      }
 
       // Se a venda não estava cancelada, faz a reconciliação do estoque:
       if (existingOrder.status !== "CANCELADO") {
@@ -320,7 +424,18 @@ export async function PUT(req: NextRequest) {
       newSubtotal = existingOrder.items.reduce((s, it) => s + Number(it.totalPrice), 0);
     }
 
-    const newDiscount = discountAmount !== undefined ? parseFloat(discountAmount) : Number(existingOrder.discountAmount);
+    const rawDiscount = discountAmount !== undefined ? parseFloat(discountAmount) : Number(existingOrder.discountAmount);
+    const newDiscount = Math.max(0, isNaN(rawDiscount) ? 0 : rawDiscount);
+
+    if (newDiscount > newSubtotal) {
+      return NextResponse.json(
+        {
+          error: `O desconto (R$ ${newDiscount.toFixed(2)}) não pode ser superior ao subtotal dos itens (R$ ${newSubtotal.toFixed(2)}).`,
+        },
+        { status: 400 }
+      );
+    }
+
     const newTotal = Math.max(0, newSubtotal - newDiscount);
 
     const updatedOrder = await db.order.update({
@@ -342,7 +457,7 @@ export async function PUT(req: NextRequest) {
     }
 
     await logAudit({
-      userId: user.id,
+      userId: user!.id,
       action: "UPDATE",
       entity: "Order",
       entityId: id,
@@ -353,7 +468,7 @@ export async function PUT(req: NextRequest) {
         itemsCount: validatedItems ? validatedItems.length : existingOrder.items.length,
       },
       ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
-      description: `Edição dos dados e itens da venda ${existingOrder.orderNumber}`,
+      description: `Edição conferida dos dados e itens da venda ${existingOrder.orderNumber}`,
     });
 
     return NextResponse.json({ success: true, order: updatedOrder });
@@ -365,7 +480,11 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    // RBAC: Apenas ADMIN e FINANCIAL podem excluir vendas
+    const roleCheck = checkUserRole(user, ["ADMIN", "FINANCIAL"]);
+    if (!roleCheck.allowed) {
+      return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+    }
 
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
@@ -399,7 +518,7 @@ export async function DELETE(req: NextRequest) {
     });
 
     await logAudit({
-      userId: user.id,
+      userId: user!.id,
       action: "DELETE",
       entity: "Order",
       entityId: id,

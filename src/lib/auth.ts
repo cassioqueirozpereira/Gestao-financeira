@@ -124,3 +124,35 @@ export async function getCurrentUser() {
     return null;
   }
 }
+
+/**
+ * Verifica se um papel de usuário está na lista de papéis permitidos (RBAC)
+ */
+export function hasRole(userRole: Role, allowedRoles: Role[]): boolean {
+  return allowedRoles.includes(userRole);
+}
+
+/**
+ * Validação de permissões para Rotas de API (RBAC)
+ * Garante que o usuário está autenticado e possui um papel autorizado.
+ */
+export function checkUserRole(
+  user: { role: Role } | null,
+  allowedRoles: Role[]
+): { allowed: boolean; status: number; error?: string } {
+  if (!user) {
+    return {
+      allowed: false,
+      status: 401,
+      error: "Não autenticado. Faça login para continuar.",
+    };
+  }
+  if (!allowedRoles.includes(user.role)) {
+    return {
+      allowed: false,
+      status: 403,
+      error: `Acesso negado. Seu perfil (${user.role}) não possui permissão para executar esta operação.`,
+    };
+  }
+  return { allowed: true, status: 200 };
+}

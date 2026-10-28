@@ -1,0 +1,42 @@
+name: Backup Automático do Banco de Dados (Supabase PostgreSQL)
+
+on:
+  schedule:
+    # Executa todos os dias às 03:00 UTC (00:00 Horário de Brasília)
+    - cron: '0 3 * * *'
+  workflow_dispatch: # Permite disparo manual com 1 clique pela aba Actions do GitHub
+
+jobs:
+  backup:
+    name: Extrair e Salvar Snapshot Diário do PostgreSQL
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar Ferramentas de Cliente PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Gerar Dump Completo do Banco de Dados
+        env:
+          DATABASE_URL: ${{ secrets.DIRECT_URL || secrets.DATABASE_URL }}
+        run: |
+          DATE_TAG=$(date +'%Y-%m-%d_%H%M%S')
+          mkdir -p backups
+          echo "Iniciando pg_dump para o snapshot: backup_${DATE_TAG}.sql.gz"
+          
+          # Executa o dump comprimido em gzip contendo schema e dados
+          pg_dump "$DATABASE_URL" --no-owner --no-privileges | gzip > "backups/backup_supabase_${DATE_TAG}.sql.gz"
+          
+          echo "Dump concluído com sucesso. Tamanho do arquivo:"
+          ls -lh backups/
+
+      - name: Fazer Upload do Backup nos Artefatos Seguros do GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: supabase-database-backup
+          path: backups/
+          retention-days: 30 # Mantém o arquivo disponível para download por 30 dias gratuitamente

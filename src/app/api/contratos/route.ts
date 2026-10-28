@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, checkUserRole } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 
 export async function GET() {
@@ -25,6 +25,10 @@ export async function POST(req: NextRequest) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    const roleCheck = checkUserRole(user, ["ADMIN", "FINANCIAL", "OPERATOR"]);
+    if (!roleCheck.allowed) {
+      return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+    }
 
     const body = await req.json();
     const {
@@ -106,6 +110,10 @@ export async function PUT(req: NextRequest) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    const roleCheck = checkUserRole(user, ["ADMIN", "FINANCIAL"]);
+    if (!roleCheck.allowed) {
+      return NextResponse.json({ error: roleCheck.error }, { status: roleCheck.status });
+    }
 
     const body = await req.json();
     const { id, action = "edit" } = body;

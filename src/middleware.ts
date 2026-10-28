@@ -8,7 +8,7 @@ const SECRET_KEY = new TextEncoder().encode(
 const SESSION_COOKIE_NAME = "erp_session";
 
 // Rotas públicas que não requerem autenticação
-const PUBLIC_PATHS = ["/login", "/orcamento", "/api/auth/login", "/api/orcamento"];
+const PUBLIC_PATHS = ["/login", "/orcamento", "/api/auth/login", "/api/orcamento", "/api/health"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
