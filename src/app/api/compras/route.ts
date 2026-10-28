@@ -176,10 +176,10 @@ export async function PUT(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json();
-    const { id, action } = body; // action: 'RECEIVE' | 'CANCEL'
+    const { id, action = "UPDATE" } = body; // action: 'RECEIVE' | 'REVERT_RECEIPT' | 'CANCEL' | 'UPDATE'
 
-    if (!id || !action) {
-      return NextResponse.json({ error: "ID e ação são obrigatórios" }, { status: 400 });
+    if (!id) {
+      return NextResponse.json({ error: "ID da compra é obrigatório" }, { status: 400 });
     }
 
     const purchase = await db.purchase.findUnique({
@@ -191,22 +191,28 @@ export async function PUT(req: NextRequest) {
 
     const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
 
+    // 1. Confirmar Recebimento Físico
     if (action === "RECEIVE") {
       if (purchase.status === "RECEBIDO") {
         return NextResponse.json({ error: "Esta compra já foi recebida anteriormente" }, { status: 400 });
       }
 
-      await db.$transaction(async (tx) => {
-        // 1. Atualiza status da compra
-        await tx.purchase.update({
+      if (purchase.status === "CANCELADO") {
+        return NextResponse.json({ error: "Não é possível receber uma compra cancelada" }, { status: 400 });
+      }
+
+      const updated = await db.$transaction(async (tx) => {
+        // Atualiza status da compra
+        const p = await tx.purchase.update({
           where: { id },
           data: {
             status: "RECEBIDO",
             deliveryDate: new Date(),
           },
+          include: { items: true, supplier: true, accountPayable: true },
         });
 
-        // 2. Dá entrada no estoque físico de cada item e registra movimentação
+        // Dá entrada no estoque físico de cada item e registra movimentação
         for (const item of purchase.items) {
           if (item.itemType === "MATERIA_PRIMA") {
             const raw = await tx.rawMaterial.findUnique({ where: { id: item.itemId } });
@@ -268,6 +274,8 @@ export async function PUT(req: NextRequest) {
             }
           }
         }
+
+        return p;
       });
 
       await logAudit({
@@ -280,17 +288,234 @@ export async function PUT(req: NextRequest) {
         description: `Confirmado recebimento físico da compra ${purchase.purchaseNumber}. Estoque atualizado automaticamente.`,
       });
 
-      return NextResponse.json({ success: true, message: "Recebimento confirmado e estoque atualizado com sucesso!" });
+      return NextResponse.json({
+        success: true,
+        message: "Recebimento confirmado e estoque atualizado com sucesso!",
+        purchase: updated,
+      });
     }
 
-    if (action === "CANCEL") {
-      if (purchase.status === "RECEBIDO") {
-        return NextResponse.json({ error: "Não é possível cancelar uma compra já recebida no estoque físico." }, { status: 400 });
+    // 2. Estornar Recebimento Físico (Reverter entrada de estoque)
+    if (action === "REVERT_RECEIPT") {
+      if (purchase.status !== "RECEBIDO") {
+        return NextResponse.json({ error: "Apenas compras com status RECEBIDO podem ser estornadas" }, { status: 400 });
       }
 
-      await db.purchase.update({
-        where: { id },
-        data: { status: "CANCELADO" },
+      const updated = await db.$transaction(async (tx) => {
+        // Reverte as quantidades adicionadas no estoque
+        for (const item of purchase.items) {
+          if (item.itemType === "MATERIA_PRIMA") {
+            const raw = await tx.rawMaterial.findUnique({ where: { id: item.itemId } });
+            if (raw) {
+              const newStock = Math.max(0, Number(raw.currentStock) - Number(item.quantity));
+              await tx.rawMaterial.update({
+                where: { id: item.itemId },
+                data: { currentStock: newStock },
+              });
+
+              await tx.stockMovement.create({
+                data: {
+                  itemType: "MATERIA_PRIMA",
+                  itemId: raw.id,
+                  itemName: raw.name,
+                  movementType: "SAIDA",
+                  quantity: Number(item.quantity),
+                  unit: item.unit,
+                  unitCost: Number(item.unitCost),
+                  totalCost: Number(item.totalCost),
+                  origin: "AJUSTE",
+                  documentReference: purchase.purchaseNumber,
+                  notes: `Estorno de recebimento físico da compra ${purchase.purchaseNumber}`,
+                  userId: user.id,
+                },
+              });
+            }
+          } else if (item.itemType === "EMBALAGEM") {
+            const pack = await tx.packaging.findUnique({ where: { id: item.itemId } });
+            if (pack) {
+              const newStock = Math.max(0, pack.currentStock - Math.round(Number(item.quantity)));
+              await tx.packaging.update({
+                where: { id: item.itemId },
+                data: { currentStock: newStock },
+              });
+
+              await tx.stockMovement.create({
+                data: {
+                  itemType: "EMBALAGEM",
+                  itemId: pack.id,
+                  itemName: pack.name,
+                  movementType: "SAIDA",
+                  quantity: Number(item.quantity),
+                  unit: item.unit,
+                  unitCost: Number(item.unitCost),
+                  totalCost: Number(item.totalCost),
+                  origin: "AJUSTE",
+                  documentReference: purchase.purchaseNumber,
+                  notes: `Estorno de recebimento físico da compra ${purchase.purchaseNumber}`,
+                  userId: user.id,
+                },
+              });
+            }
+          }
+        }
+
+        // Volta status para PENDENTE_ENTREGA e remove deliveryDate
+        const p = await tx.purchase.update({
+          where: { id },
+          data: {
+            status: "PENDENTE_ENTREGA",
+            deliveryDate: null,
+          },
+          include: { items: true, supplier: true, accountPayable: true },
+        });
+
+        return p;
+      });
+
+      await logAudit({
+        userId: user.id,
+        action: "STATUS_CHANGE",
+        entity: "Purchase",
+        entityId: id,
+        newValues: { status: "PENDENTE_ENTREGA" },
+        ipAddress,
+        description: `Estorno de recebimento físico da compra ${purchase.purchaseNumber}. Itens subtraídos do estoque.`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: "Recebimento físico estornado com sucesso! Os itens foram deduzidos do estoque e o status voltou para Pendente.",
+        purchase: updated,
+      });
+    }
+
+    // 3. Cancelar Pedido de Compra
+    if (action === "CANCEL") {
+      if (purchase.status === "RECEBIDO") {
+        return NextResponse.json(
+          { error: "Não é possível cancelar uma compra já recebida. Por favor, estorne o recebimento físico primeiro para regularizar o estoque." },
+          { status: 400 }
+        );
+      }
+
+      if (purchase.status === "CANCELADO") {
+        return NextResponse.json({ error: "Esta compra já está cancelada." }, { status: 400 });
+      }
+
+      const updated = await db.$transaction(async (tx) => {
+        // Atualiza status da compra para CANCELADO
+        const p = await tx.purchase.update({
+          where: { id },
+          data: { status: "CANCELADO" },
+          include: { items: true, supplier: true, accountPayable: true },
+        });
+
+        // Cancela títulos a pagar vinculados que estejam em aberto
+        const payablesToCancel = await tx.accountPayable.findMany({
+          where: {
+            OR: [
+              { id: purchase.accountPayableId || undefined },
+              { notes: { contains: purchase.purchaseNumber } },
+            ],
+            status: { in: ["EM_ABERTO", "A_VENCER"] },
+          },
+        });
+
+        for (const payable of payablesToCancel) {
+          await tx.accountPayable.update({
+            where: { id: payable.id },
+            data: { status: "CANCELADA" },
+          });
+        }
+
+        return p;
+      });
+
+      await logAudit({
+        userId: user.id,
+        action: "STATUS_CHANGE",
+        entity: "Purchase",
+        entityId: id,
+        newValues: { status: "CANCELADO" },
+        ipAddress,
+        description: `Cancelamento do pedido de compra ${purchase.purchaseNumber} e cancelamento dos títulos a pagar vinculados.`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: "Pedido de compra cancelado com sucesso! Os títulos a pagar vinculados foram cancelados.",
+        purchase: updated,
+      });
+    }
+
+    // 4. Editar Pedido de Compra (action: 'UPDATE')
+    if (action === "UPDATE") {
+      if (purchase.status === "CANCELADO") {
+        return NextResponse.json({ error: "Não é possível editar uma compra cancelada." }, { status: 400 });
+      }
+
+      const {
+        supplierId,
+        invoiceNumber,
+        freightAmount,
+        notes,
+        orderDate,
+        items, // Opcional se for alterar itens (apenas permitido se PENDENTE_ENTREGA)
+      } = body;
+
+      const updated = await db.$transaction(async (tx) => {
+        let newTotalAmount = Number(purchase.totalAmount);
+        const newFreight = freightAmount !== undefined ? Number(freightAmount) : Number(purchase.freightAmount);
+
+        // Se a compra for PENDENTE_ENTREGA e foram enviados novos itens:
+        if (purchase.status === "PENDENTE_ENTREGA" && items && Array.isArray(items) && items.length > 0) {
+          const itemsTotal = items.reduce(
+            (acc: number, it: any) => acc + Number(it.quantity) * Number(it.unitCost),
+            0
+          );
+          newTotalAmount = itemsTotal + newFreight;
+
+          // Remove itens antigos
+          await tx.purchaseItem.deleteMany({
+            where: { purchaseId: id },
+          });
+
+          // Cria novos itens
+          await tx.purchaseItem.createMany({
+            data: items.map((it: any) => ({
+              purchaseId: id,
+              itemType: it.itemType,
+              itemId: it.itemId,
+              name: it.name,
+              quantity: Number(it.quantity),
+              unit: it.unit,
+              unitCost: Number(it.unitCost),
+              totalCost: Number(it.quantity) * Number(it.unitCost),
+            })),
+          });
+        } else if (freightAmount !== undefined && purchase.status === "PENDENTE_ENTREGA") {
+          // Apenas recalcula frete com os itens existentes
+          const itemsTotal = purchase.items.reduce(
+            (acc: number, it: any) => acc + Number(it.totalCost),
+            0
+          );
+          newTotalAmount = itemsTotal + newFreight;
+        }
+
+        const p = await tx.purchase.update({
+          where: { id },
+          data: {
+            supplierId: supplierId || purchase.supplierId,
+            invoiceNumber: invoiceNumber !== undefined ? (invoiceNumber?.trim() || null) : purchase.invoiceNumber,
+            freightAmount: newFreight,
+            totalAmount: newTotalAmount,
+            notes: notes !== undefined ? (notes?.trim() || null) : purchase.notes,
+            orderDate: orderDate ? new Date(orderDate) : purchase.orderDate,
+          },
+          include: { items: true, supplier: true, accountPayable: true },
+        });
+
+        return p;
       });
 
       await logAudit({
@@ -298,12 +523,16 @@ export async function PUT(req: NextRequest) {
         action: "UPDATE",
         entity: "Purchase",
         entityId: id,
-        newValues: { status: "CANCELADO" },
+        newValues: { supplierId, invoiceNumber, freightAmount, notes },
         ipAddress,
-        description: `Cancelamento do pedido de compra ${purchase.purchaseNumber}`,
+        description: `Edição dos dados do pedido de compra ${purchase.purchaseNumber}.`,
       });
 
-      return NextResponse.json({ success: true, message: "Compra cancelada com sucesso" });
+      return NextResponse.json({
+        success: true,
+        message: "Pedido de compra atualizado com sucesso!",
+        purchase: updated,
+      });
     }
 
     return NextResponse.json({ error: "Ação não suportada" }, { status: 400 });

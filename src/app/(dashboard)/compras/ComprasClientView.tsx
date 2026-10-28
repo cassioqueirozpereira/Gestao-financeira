@@ -18,6 +18,10 @@ import {
   Trash2,
   AlertCircle,
   Check,
+  Edit2,
+  RotateCcw,
+  Ban,
+  Info,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -70,6 +74,18 @@ export function ComprasClientView({
 
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Modal Edição de Pedido de Compra
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<any | null>(null);
+  const [editSupplierId, setEditSupplierId] = useState("");
+  const [editInvoiceNumber, setEditInvoiceNumber] = useState("");
+  const [editFreightAmount, setEditFreightAmount] = useState("0");
+  const [editNotes, setEditNotes] = useState("");
+  const [editOrderDate, setEditOrderDate] = useState("");
+  const [editItems, setEditItems] = useState<any[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editErrorMsg, setEditErrorMsg] = useState<string | null>(null);
 
   const formatBRL = (val: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -241,6 +257,228 @@ export function ComprasClientView({
       alert(err.message);
     } finally {
       setActionLoading((prev) => ({ ...prev, [p.id]: false }));
+    }
+  };
+
+  const handleRevertReceipt = async (p: any) => {
+    if (
+      !confirm(
+        `Deseja realmente ESTORNAR o recebimento físico da compra ${p.purchaseNumber}?\n\n- O estoque dos itens recebidos será subtraído do estoque atual.\n- O status da compra voltará para 'Pendente de Entrega'.`
+      )
+    ) {
+      return;
+    }
+
+    setActionLoading((prev) => ({ ...prev, [p.id]: true }));
+    try {
+      const res = await fetch("/api/compras", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: p.id, action: "REVERT_RECEIPT" }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao estornar recebimento");
+
+      setPurchases((prev) =>
+        prev.map((item) =>
+          item.id === p.id ? { ...item, status: "PENDENTE_ENTREGA", deliveryDate: null } : item
+        )
+      );
+      alert(data.message || "Recebimento físico estornado com sucesso! O estoque foi regularizado.");
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [p.id]: false }));
+    }
+  };
+
+  const handleCancelPurchase = async (p: any) => {
+    if (
+      !confirm(
+        `Deseja realmente CANCELAR o pedido de compra ${p.purchaseNumber}?\n\nSe houver parcelas geradas no Contas a Pagar em aberto, elas também serão canceladas automaticamente.`
+      )
+    ) {
+      return;
+    }
+
+    setActionLoading((prev) => ({ ...prev, [p.id]: true }));
+    try {
+      const res = await fetch("/api/compras", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: p.id, action: "CANCEL" }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao cancelar compra");
+
+      setPurchases((prev) =>
+        prev.map((item) => (item.id === p.id ? { ...item, status: "CANCELADO" } : item))
+      );
+      alert(data.message || "Pedido de compra cancelado com sucesso!");
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [p.id]: false }));
+    }
+  };
+
+  const handleOpenEdit = (p: any) => {
+    setEditingPurchase(p);
+    setEditSupplierId(p.supplierId || p.supplier?.id || "");
+    setEditInvoiceNumber(p.invoiceNumber || "");
+    setEditFreightAmount(String(p.freightAmount || 0));
+    setEditNotes(p.notes || "");
+    setEditOrderDate(p.orderDate ? new Date(p.orderDate).toISOString().slice(0, 10) : "");
+    if (p.items && p.items.length > 0) {
+      setEditItems(
+        p.items.map((it: any) => ({
+          itemType: it.itemType,
+          itemId: it.itemId,
+          name: it.name,
+          quantity: Number(it.quantity),
+          unit: it.unit,
+          unitCost: Number(it.unitCost),
+        }))
+      );
+    } else {
+      setEditItems([]);
+    }
+    setEditErrorMsg(null);
+    setShowEditModal(true);
+  };
+
+  const handleAddEditItemRow = () => {
+    const defaultRaw = rawMaterials[0];
+    if (defaultRaw) {
+      setEditItems((prev) => [
+        ...prev,
+        {
+          itemType: "MATERIA_PRIMA",
+          itemId: defaultRaw.id,
+          name: defaultRaw.name,
+          quantity: 1,
+          unit: defaultRaw.unit,
+          unitCost: Number(defaultRaw.unitCost || 0),
+        },
+      ]);
+    } else if (packagings[0]) {
+      const defaultPack = packagings[0];
+      setEditItems((prev) => [
+        ...prev,
+        {
+          itemType: "EMBALAGEM",
+          itemId: defaultPack.id,
+          name: defaultPack.name,
+          quantity: 1,
+          unit: defaultPack.unit,
+          unitCost: Number(defaultPack.unitCost || 0),
+        },
+      ]);
+    }
+  };
+
+  const handleRemoveEditItemRow = (index: number) => {
+    if (editItems.length <= 1) return;
+    setEditItems((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleEditItemChange = (index: number, field: string, value: any) => {
+    setEditItems((prev) => {
+      const updated = [...prev];
+      const item = { ...updated[index] };
+
+      if (field === "itemType") {
+        item.itemType = value;
+        if (value === "MATERIA_PRIMA") {
+          const first = rawMaterials[0];
+          if (first) {
+            item.itemId = first.id;
+            item.name = first.name;
+            item.unit = first.unit;
+            item.unitCost = Number(first.unitCost);
+          }
+        } else {
+          const first = packagings[0];
+          if (first) {
+            item.itemId = first.id;
+            item.name = first.name;
+            item.unit = first.unit;
+            item.unitCost = Number(first.unitCost);
+          }
+        }
+      } else if (field === "itemId") {
+        item.itemId = value;
+        if (item.itemType === "MATERIA_PRIMA") {
+          const found = rawMaterials.find((m) => m.id === value);
+          if (found) {
+            item.name = found.name;
+            item.unit = found.unit;
+            item.unitCost = Number(found.unitCost);
+          }
+        } else {
+          const found = packagings.find((p) => p.id === value);
+          if (found) {
+            item.name = found.name;
+            item.unit = found.unit;
+            item.unitCost = Number(found.unitCost);
+          }
+        }
+      } else {
+        item[field] = value;
+      }
+
+      updated[index] = item;
+      return updated;
+    });
+  };
+
+  const calculateEditTotal = () => {
+    const sub = editItems.reduce(
+      (acc, it) => acc + (Number(it.quantity) || 0) * (Number(it.unitCost) || 0),
+      0
+    );
+    return sub + (Number(editFreightAmount) || 0);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPurchase) return;
+    setEditSaving(true);
+    setEditErrorMsg(null);
+
+    try {
+      const res = await fetch("/api/compras", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingPurchase.id,
+          action: "UPDATE",
+          supplierId: editSupplierId,
+          invoiceNumber: editInvoiceNumber,
+          freightAmount: parseFloat(editFreightAmount) || 0,
+          notes: editNotes,
+          orderDate: editOrderDate,
+          items: editingPurchase.status === "PENDENTE_ENTREGA" ? editItems : undefined,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao atualizar compra");
+
+      setPurchases((prev) =>
+        prev.map((item) => (item.id === editingPurchase.id ? { ...item, ...data.purchase } : item))
+      );
+      setShowEditModal(false);
+      alert("Pedido de compra atualizado com sucesso!");
+      router.refresh();
+    } catch (err: any) {
+      setEditErrorMsg(err.message || "Erro desconhecido");
+    } finally {
+      setEditSaving(false);
     }
   };
 
@@ -435,16 +673,58 @@ export function ComprasClientView({
                         )}
                       </td>
                       <td className="px-6 py-4 text-right">
-                        {isPending && (
-                          <button
-                            onClick={() => handleConfirmReceipt(p)}
-                            disabled={actionLoading[p.id]}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            {actionLoading[p.id] ? "Atualizando..." : "Confirmar Recebimento"}
-                          </button>
-                        )}
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          {/* Botão Editar: para compras ativas (pendentes ou recebidas) */}
+                          {p.status !== "CANCELADO" && (
+                            <button
+                              onClick={() => handleOpenEdit(p)}
+                              disabled={actionLoading[p.id]}
+                              title="Editar dados da compra"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              Editar
+                            </button>
+                          )}
+
+                          {/* Botões para compra pendente de entrega */}
+                          {isPending && (
+                            <>
+                              <button
+                                onClick={() => handleConfirmReceipt(p)}
+                                disabled={actionLoading[p.id]}
+                                title="Confirmar entrada física no estoque"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                {actionLoading[p.id] ? "Recebendo..." : "Receber"}
+                              </button>
+
+                              <button
+                                onClick={() => handleCancelPurchase(p)}
+                                disabled={actionLoading[p.id]}
+                                title="Cancelar pedido de compra e contas vinculadas"
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                              >
+                                <Ban className="w-3.5 h-3.5" />
+                                Cancelar
+                              </button>
+                            </>
+                          )}
+
+                          {/* Botão para compra já recebida no estoque */}
+                          {p.status === "RECEBIDO" && (
+                            <button
+                              onClick={() => handleRevertReceipt(p)}
+                              disabled={actionLoading[p.id]}
+                              title="Estornar recebimento físico e deduzir itens do estoque"
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              {actionLoading[p.id] ? "Estornando..." : "Estornar"}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -699,6 +979,247 @@ export function ComprasClientView({
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md"
                 >
                   {saving ? "Salvando Pedido..." : "Emitir Pedido de Compra"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Modal - Edição de Pedido de Compra */}
+      {showEditModal && editingPurchase && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden max-h-[92vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Edit2 className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-bold text-slate-900 dark:text-white">
+                  Editar Pedido: {editingPurchase.purchaseNumber}
+                </h3>
+              </div>
+              <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="p-6 space-y-4 overflow-y-auto flex-1 text-xs">
+              {editErrorMsg && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-rose-700 dark:text-rose-400 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{editErrorMsg}</span>
+                </div>
+              )}
+
+              {editingPurchase.status === "RECEBIDO" && (
+                <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
+                  <Info className="w-4 h-4 mt-0.5 shrink-0" />
+                  <div>
+                    <span className="font-bold block">Entrada física já confirmada no estoque</span>
+                    <span className="text-[11px] opacity-90">
+                      Este pedido já teve os itens lançados no estoque. Aqui você pode alterar a Nota Fiscal e Observações. Para alterar os itens ou quantidades, feche este modal e utilize o botão <strong>Estornar</strong>.
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Fornecedor *
+                  </label>
+                  <select
+                    value={editSupplierId}
+                    onChange={(e) => setEditSupplierId(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-slate-900 dark:text-white"
+                  >
+                    {suppliers.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} {s.tradeName ? `(${s.tradeName})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Número da Nota Fiscal (NF-e)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Ex: NF-e 12450"
+                    value={editInvoiceNumber}
+                    onChange={(e) => setEditInvoiceNumber(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Data do Pedido
+                  </label>
+                  <input
+                    type="date"
+                    value={editOrderDate}
+                    onChange={(e) => setEditOrderDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Valor do Frete (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editFreightAmount}
+                    onChange={(e) => setEditFreightAmount(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Status Atual
+                  </label>
+                  <div className="px-3 py-2 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300">
+                    {editingPurchase.status === "RECEBIDO"
+                      ? "Recebido no Estoque"
+                      : editingPurchase.status === "PENDENTE_ENTREGA"
+                      ? "Pendente de Entrega"
+                      : "Cancelado"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabela de Itens (Editável apenas se PENDENTE_ENTREGA) */}
+              {editingPurchase.status === "PENDENTE_ENTREGA" && (
+                <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold uppercase text-[10px] tracking-wider text-slate-500">
+                      Itens do Pedido (Matérias-Primas e Embalagens)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleAddEditItemRow}
+                      className="flex items-center gap-1 text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Adicionar Item
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {editItems.map((it, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 grid grid-cols-12 gap-2 items-center"
+                      >
+                        <div className="col-span-3">
+                          <select
+                            value={it.itemType}
+                            onChange={(e) => handleEditItemChange(idx, "itemType", e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border rounded-lg text-xs"
+                          >
+                            <option value="MATERIA_PRIMA">Insumo / Matéria</option>
+                            <option value="EMBALAGEM">Embalagem / Pote</option>
+                          </select>
+                        </div>
+
+                        <div className="col-span-4">
+                          <select
+                            value={it.itemId}
+                            onChange={(e) => handleEditItemChange(idx, "itemId", e.target.value)}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border rounded-lg text-xs font-semibold"
+                          >
+                            {it.itemType === "MATERIA_PRIMA"
+                              ? rawMaterials.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name} ({m.unit})
+                                  </option>
+                                ))
+                              : packagings.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name} ({p.unit})
+                                  </option>
+                                ))}
+                          </select>
+                        </div>
+
+                        <div className="col-span-2">
+                          <input
+                            type="number"
+                            step="any"
+                            required
+                            placeholder="Qtd"
+                            value={it.quantity}
+                            onChange={(e) => handleEditItemChange(idx, "quantity", parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border rounded-lg text-xs text-right font-bold"
+                          />
+                        </div>
+
+                        <div className="col-span-2">
+                          <input
+                            type="number"
+                            step="0.01"
+                            required
+                            placeholder="R$ Unit"
+                            value={it.unitCost}
+                            onChange={(e) => handleEditItemChange(idx, "unitCost", parseFloat(e.target.value) || 0)}
+                            className="w-full px-2 py-1.5 bg-white dark:bg-slate-900 border rounded-lg text-xs text-right font-bold text-indigo-600"
+                          />
+                        </div>
+
+                        <div className="col-span-1 text-right">
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveEditItemRow(idx)}
+                            className="text-slate-400 hover:text-rose-500 p-1"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex justify-between items-center p-3 bg-indigo-50 dark:bg-indigo-950/40 rounded-2xl border border-indigo-100 dark:border-indigo-900 text-xs">
+                    <span className="font-semibold text-indigo-900 dark:text-indigo-300">
+                      Total Recalculado (Itens + Frete):
+                    </span>
+                    <span className="font-mono font-black text-indigo-600 dark:text-indigo-400 text-base">
+                      {formatBRL(calculateEditTotal())}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Observações Gerais da Compra
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Instruções de entrega, transportadora, etc..."
+                  value={editNotes}
+                  onChange={(e) => setEditNotes(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border rounded-xl"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl font-semibold"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md"
+                >
+                  {editSaving ? "Salvando..." : "Salvar Alterações"}
                 </button>
               </div>
             </form>
