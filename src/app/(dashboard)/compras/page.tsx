@@ -6,62 +6,47 @@ import { ComprasClientView } from "./ComprasClientView";
 export const dynamic = "force-dynamic";
 
 export default async function ComprasPage() {
-  let purchases: any[] = [];
-  let suppliers: any[] = [];
-  let rawMaterials: any[] = [];
-  let packagings: any[] = [];
-  let costCenters: any[] = [];
-  let chartOfAccounts: any[] = [];
-
-  try {
-    purchases = await db.purchase.findMany({
+  const [
+    purchasesRes,
+    suppliersRes,
+    rawRes,
+    packRes,
+    costCentersRes,
+    chartRes,
+  ] = await Promise.allSettled([
+    db.purchase.findMany({
       include: {
         supplier: true,
         items: true,
         accountPayable: true,
       },
       orderBy: { orderDate: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar compras:", e);
-  }
-
-  try {
-    suppliers = await db.supplier.findMany({
+    }),
+    db.supplier.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar fornecedores:", e);
-  }
-
-  try {
-    rawMaterials = await db.rawMaterial.findMany({
+    }),
+    db.rawMaterial.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar matérias-primas:", e);
-  }
-
-  try {
-    packagings = await db.packaging.findMany({
+    }),
+    db.packaging.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar embalagens:", e);
-  }
-
-  try {
-    costCenters = await db.costCenter.findMany({ orderBy: { name: "asc" } });
-    chartOfAccounts = await db.chartOfAccount.findMany({
+    }),
+    db.costCenter.findMany({ orderBy: { name: "asc" } }),
+    db.chartOfAccount.findMany({
       where: { isActive: true },
       orderBy: { code: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas/centros:", e);
-  }
+    }),
+  ]);
+
+  const purchases = purchasesRes.status === "fulfilled" ? purchasesRes.value : [];
+  const suppliers = suppliersRes.status === "fulfilled" ? suppliersRes.value : [];
+  const rawMaterials = rawRes.status === "fulfilled" ? rawRes.value : [];
+  const packagings = packRes.status === "fulfilled" ? packRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
+  const chartOfAccounts = chartRes.status === "fulfilled" ? chartRes.value : [];
 
   const serializedPurchases = purchases.map((p) => ({
     ...p,

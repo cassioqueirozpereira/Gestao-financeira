@@ -6,27 +6,20 @@ import { CatalogClientView } from "./CatalogClientView";
 export const dynamic = "force-dynamic";
 
 export default async function CatalogPage() {
-  let products: any[] = [];
-  let officialCategories: any[] = [];
-
-  try {
-    products = await db.product.findMany({
+  const [productsRes, categoriesRes] = await Promise.allSettled([
+    db.product.findMany({
       include: {
         categoryRef: true,
       },
       orderBy: [{ category: "asc" }, { basePrice: "asc" }],
-    });
-  } catch (e) {
-    console.error("Erro ao carregar catálogo de produtos:", e);
-  }
-
-  try {
-    officialCategories = await db.category.findMany({
+    }),
+    db.category.findMany({
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar categorias oficiais:", e);
-  }
+    }),
+  ]);
+
+  const products = productsRes.status === "fulfilled" ? productsRes.value : [];
+  const officialCategories = categoriesRes.status === "fulfilled" ? categoriesRes.value : [];
 
   // Serializa datas
   const serializedProducts = products.map((p) => ({

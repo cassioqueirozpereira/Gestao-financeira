@@ -6,38 +6,30 @@ import { BanksClientView } from "./BanksClientView";
 export const dynamic = "force-dynamic";
 
 export default async function BanksAndCardsPage() {
-  let bankAccounts: any[] = [];
-  let creditCards: any[] = [];
-  let companies: any[] = [];
-
-  try {
-    bankAccounts = await db.bankAccount.findMany({
+  const [
+    bankAccountsRes,
+    creditCardsRes,
+    companiesRes,
+  ] = await Promise.allSettled([
+    db.bankAccount.findMany({
       include: {
         company: true,
         creditCards: true,
       },
       orderBy: { createdAt: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas bancárias:", e);
-  }
-
-  try {
-    creditCards = await db.creditCard.findMany({
+    }),
+    db.creditCard.findMany({
       include: {
         bankAccount: true,
       },
       orderBy: { createdAt: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar cartões de crédito:", e);
-  }
+    }),
+    db.company.findMany(),
+  ]);
 
-  try {
-    companies = await db.company.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar empresas:", e);
-  }
+  const bankAccounts = bankAccountsRes.status === "fulfilled" ? bankAccountsRes.value : [];
+  const creditCards = creditCardsRes.status === "fulfilled" ? creditCardsRes.value : [];
+  const companies = companiesRes.status === "fulfilled" ? companiesRes.value : [];
 
   return (
     <div className="space-y-6">

@@ -26,24 +26,24 @@ const createSaleSchema = z.object({
 
 export async function GET() {
   try {
-    const orders = await db.order.findMany({
-      include: {
-        customer: true,
-        items: {
-          include: { product: true },
+    const [orders, products, customers] = await Promise.all([
+      db.order.findMany({
+        include: {
+          customer: true,
+          items: {
+            include: { product: true },
+          },
+          receivables: true,
         },
-        receivables: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
-
-    const products = await db.product.findMany({
-      orderBy: [{ category: "asc" }, { name: "asc" }],
-    });
-
-    const customers = await db.customer.findMany({
-      orderBy: { name: "asc" },
-    });
+        orderBy: { createdAt: "desc" },
+      }),
+      db.product.findMany({
+        orderBy: [{ category: "asc" }, { name: "asc" }],
+      }),
+      db.customer.findMany({
+        orderBy: { name: "asc" },
+      }),
+    ]);
 
     return NextResponse.json({ orders, products, customers });
   } catch (error: any) {

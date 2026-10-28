@@ -4,13 +4,13 @@ import { Landmark, AlertTriangle, TrendingDown, Clock, ShieldAlert } from "lucid
 import { DebtsClientView } from "./DebtsClientView";
 
 export default async function DebtsPage() {
-  let debts: any[] = [];
-  let companies: any[] = [];
-  let costCenters: any[] = [];
-  let accounts: any[] = [];
-
-  try {
-    debts = await db.debtObligation.findMany({
+  const [
+    debtsRes,
+    companiesRes,
+    costCentersRes,
+    accountsRes,
+  ] = await Promise.allSettled([
+    db.debtObligation.findMany({
       include: {
         company: true,
         costCenter: true,
@@ -19,32 +19,20 @@ export default async function DebtsPage() {
         },
       },
       orderBy: { contractDate: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar dívidas:", e);
-  }
-
-  try {
-    companies = await db.company.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar empresas:", e);
-  }
-
-  try {
-    costCenters = await db.costCenter.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar centros de custo:", e);
-  }
-
-  try {
-    accounts = await db.chartOfAccount.findMany({
+    }),
+    db.company.findMany(),
+    db.costCenter.findMany(),
+    db.chartOfAccount.findMany({
       where: {
         type: { in: ["OBRIGACAO_FINANCEIRA", "DESPESA_ADMINISTRATIVA", "CUSTO_DIRETO"] },
       },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar plano de contas:", e);
-  }
+    }),
+  ]);
+
+  const debts = debtsRes.status === "fulfilled" ? debtsRes.value : [];
+  const companies = companiesRes.status === "fulfilled" ? companiesRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
+  const accounts = accountsRes.status === "fulfilled" ? accountsRes.value : [];
 
   // Indicadores de endividamento
   const totalDividasOriginal = debts.reduce((s, d) => s + Number(d.originalAmount), 0);

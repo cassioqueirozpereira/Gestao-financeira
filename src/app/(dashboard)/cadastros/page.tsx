@@ -15,21 +15,25 @@ import { db } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 export default async function CadastrosHubPage() {
-  let categoriesCount = 0;
-  let suppliersCount = 0;
-  let accountsCount = 0;
-  let rawMaterialsCount = 0;
-  let packagingsCount = 0;
+  const [
+    catCountRes,
+    suppCountRes,
+    accCountRes,
+    rawCountRes,
+    packCountRes,
+  ] = await Promise.allSettled([
+    db.category.count(),
+    db.supplier.count(),
+    db.chartOfAccount.count(),
+    db.rawMaterial.count(),
+    db.packaging.count(),
+  ]);
 
-  try {
-    categoriesCount = await db.category.count();
-    suppliersCount = await db.supplier.count();
-    accountsCount = await db.chartOfAccount.count();
-    rawMaterialsCount = await db.rawMaterial.count();
-    packagingsCount = await db.packaging.count();
-  } catch (e) {
-    console.error("Erro ao carregar contadores de cadastros:", e);
-  }
+  const categoriesCount = catCountRes.status === "fulfilled" ? catCountRes.value : 0;
+  const suppliersCount = suppCountRes.status === "fulfilled" ? suppCountRes.value : 0;
+  const accountsCount = accCountRes.status === "fulfilled" ? accCountRes.value : 0;
+  const rawMaterialsCount = rawCountRes.status === "fulfilled" ? rawCountRes.value : 0;
+  const packagingsCount = packCountRes.status === "fulfilled" ? packCountRes.value : 0;
 
   const sections = [
     {

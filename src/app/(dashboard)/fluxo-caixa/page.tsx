@@ -22,41 +22,31 @@ export default async function CashFlowPage({ searchParams }: CashFlowProps) {
     }
   }
 
-  // 1. Contas Bancárias
-  let bankAccounts: any[] = [];
-  try {
-    bankAccounts = await db.bankAccount.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar contas bancárias no fluxo de caixa:", e);
-  }
+  // 1. Executa consultas em paralelo com Promise.allSettled
+  const [bankAccountsRes, receivablesRes, payablesRes] = await Promise.allSettled([
+    db.bankAccount.findMany(),
+    db.accountReceivable.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+      orderBy: { dueDate: "asc" },
+    }),
+    db.accountPayable.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+      orderBy: { dueDate: "asc" },
+    }),
+  ]);
+
+  const bankAccounts = bankAccountsRes.status === "fulfilled" ? bankAccountsRes.value : [];
+  const receivables = receivablesRes.status === "fulfilled" ? receivablesRes.value : [];
+  const payables = payablesRes.status === "fulfilled" ? payablesRes.value : [];
+
   const saldoInicialConsolidado = bankAccounts.reduce((s, a) => s + Number(a.initialBalance || 0), 0);
   const saldoAtualConsolidado = bankAccounts.reduce((s, a) => s + Number(a.currentBalance || 0), 0);
 
-  // 2. Recebíveis (Entradas)
-  let receivables: any[] = [];
-  try {
-    receivables = await db.accountReceivable.findMany({
-      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-      orderBy: { dueDate: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas a receber no fluxo de caixa:", e);
-  }
   const entradasPrevistas = receivables.reduce((s, r) => s + Number(r.originalAmount || 0), 0);
   const entradasRealizadas = receivables
     .filter((r) => r.status === "RECEBIDA")
     .reduce((s, r) => s + Number(r.receivedAmount || 0), 0);
 
-  // 3. Pagáveis (Saídas)
-  let payables: any[] = [];
-  try {
-    payables = await db.accountPayable.findMany({
-      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-      orderBy: { dueDate: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas a pagar no fluxo de caixa:", e);
-  }
   const saidasPrevistas = payables.reduce((s, p) => s + Number(p.originalAmount || 0), 0);
   const saidasRealizadas = payables
     .filter((p) => p.status === "PAGA")

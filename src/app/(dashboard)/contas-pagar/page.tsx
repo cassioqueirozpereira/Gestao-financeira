@@ -4,14 +4,14 @@ import { ArrowDownCircle } from "lucide-react";
 import { PayablesClientView } from "./PayablesClientView";
 
 export default async function AccountsPayablePage() {
-  let payables: any[] = [];
-  let costCenters: any[] = [];
-  let bankAccounts: any[] = [];
-  let accounts: any[] = [];
-  let suppliers: any[] = [];
-
-  try {
-    payables = await db.accountPayable.findMany({
+  const [
+    payablesRes,
+    suppliersRes,
+    costCentersRes,
+    bankAccountsRes,
+    accountsRes,
+  ] = await Promise.allSettled([
+    db.accountPayable.findMany({
       include: {
         costCenter: true,
         chartOfAccount: true,
@@ -19,34 +19,14 @@ export default async function AccountsPayablePage() {
         bankAccount: true,
       },
       orderBy: { dueDate: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas a pagar:", e);
-  }
-
-  try {
-    suppliers = await db.supplier.findMany({
+    }),
+    db.supplier.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar fornecedores:", e);
-  }
-
-  try {
-    costCenters = await db.costCenter.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar centros de custo:", e);
-  }
-
-  try {
-    bankAccounts = await db.bankAccount.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar contas bancárias:", e);
-  }
-
-  try {
-    accounts = await db.chartOfAccount.findMany({
+    }),
+    db.costCenter.findMany(),
+    db.bankAccount.findMany(),
+    db.chartOfAccount.findMany({
       where: {
         type: {
           in: [
@@ -58,10 +38,14 @@ export default async function AccountsPayablePage() {
           ],
         },
       },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar plano de contas:", e);
-  }
+    }),
+  ]);
+
+  const payables = payablesRes.status === "fulfilled" ? payablesRes.value : [];
+  const suppliers = suppliersRes.status === "fulfilled" ? suppliersRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
+  const bankAccounts = bankAccountsRes.status === "fulfilled" ? bankAccountsRes.value : [];
+  const accounts = accountsRes.status === "fulfilled" ? accountsRes.value : [];
 
   return (
     <div className="space-y-6">

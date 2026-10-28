@@ -6,13 +6,13 @@ import { ReceivablesClientView } from "./ReceivablesClientView";
 export const dynamic = "force-dynamic";
 
 export default async function AccountsReceivablePage() {
-  let receivables: any[] = [];
-  let costCenters: any[] = [];
-  let customers: any[] = [];
-  let accounts: any[] = [];
-
-  try {
-    receivables = await db.accountReceivable.findMany({
+  const [
+    receivablesRes,
+    costCentersRes,
+    customersRes,
+    accountsRes,
+  ] = await Promise.allSettled([
+    db.accountReceivable.findMany({
       include: {
         costCenter: true,
         chartOfAccount: true,
@@ -20,30 +20,18 @@ export default async function AccountsReceivablePage() {
         bankAccount: true,
       },
       orderBy: { dueDate: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas a receber:", e);
-  }
-
-  try {
-    costCenters = await db.costCenter.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar centros de custo:", e);
-  }
-
-  try {
-    customers = await db.customer.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar clientes:", e);
-  }
-
-  try {
-    accounts = await db.chartOfAccount.findMany({
+    }),
+    db.costCenter.findMany(),
+    db.customer.findMany(),
+    db.chartOfAccount.findMany({
       where: { type: "RECEITA_OPERACIONAL" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar plano de contas:", e);
-  }
+    }),
+  ]);
+
+  const receivables = receivablesRes.status === "fulfilled" ? receivablesRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
+  const customers = customersRes.status === "fulfilled" ? customersRes.value : [];
+  const accounts = accountsRes.status === "fulfilled" ? accountsRes.value : [];
 
   return (
     <div className="space-y-6">

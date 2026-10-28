@@ -4,12 +4,8 @@ import { FileText, Plus, ShieldCheck, Download, CheckCircle2 } from "lucide-reac
 import { ContractsClientView } from "./ContractsClientView";
 
 export default async function ContractsPage() {
-  let contracts: any[] = [];
-  let companies: any[] = [];
-  let customers: any[] = [];
-
-  try {
-    contracts = await db.contract.findMany({
+  const [contractsRes, companiesRes, customersRes] = await Promise.allSettled([
+    db.contract.findMany({
       include: {
         company: true,
         customer: true,
@@ -18,30 +14,22 @@ export default async function ContractsPage() {
         },
       },
       orderBy: { createdAt: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contratos:", e);
-  }
-
-  try {
-    companies = await db.company.findMany({
+    }),
+    db.company.findMany({
       where: { isPersonal: false },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar empresas:", e);
-  }
-
-  try {
-    customers = await db.customer.findMany({
+    }),
+    db.customer.findMany({
       include: {
         contracts: true,
         accountsReceivable: true,
       },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar clientes:", e);
-  }
+    }),
+  ]);
+
+  const contracts = contractsRes.status === "fulfilled" ? contractsRes.value : [];
+  const companies = companiesRes.status === "fulfilled" ? companiesRes.value : [];
+  const customers = customersRes.status === "fulfilled" ? customersRes.value : [];
 
   return (
     <div className="space-y-6">

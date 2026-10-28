@@ -6,7 +6,6 @@ import { RelatoriosClientView } from "./RelatoriosClientView";
 export const dynamic = "force-dynamic";
 
 export default async function RelatoriosPage() {
-  let costCenters: any[] = [];
   let initialData: any = {
     financeiro: { totalReceitas: 0, totalDespesas: 0, resultadoLiquido: 0, receivedItems: [], paidItems: [] },
     estoque: { totalInventoryValue: 0, totalRawValue: 0, totalPackValue: 0, totalProdValue: 0 },
@@ -14,34 +13,52 @@ export default async function RelatoriosPage() {
     compras: { totalCompras: 0, purchasesCount: 0, purchases: [] },
   };
 
-  try {
-    costCenters = await db.costCenter.findMany({ orderBy: { name: "asc" } });
+  let costCenters: any[] = [];
 
-    // Carga inicial dos dados
-    const received = await db.accountReceivable.findMany({
-      where: { status: "RECEBIDA" },
-      include: { costCenter: true, chartOfAccount: true, customer: true },
-      take: 20,
-    });
-    const paid = await db.accountPayable.findMany({
-      where: { status: "PAGA" },
-      include: { costCenter: true, chartOfAccount: true, supplier: true },
-      take: 20,
-    });
+  try {
+    const [
+      costCentersRes,
+      receivedRes,
+      paidRes,
+      rawMaterialsRes,
+      packagingsRes,
+      productsRes,
+      productionOrdersRes,
+      purchasesRes,
+    ] = await Promise.allSettled([
+      db.costCenter.findMany({ orderBy: { name: "asc" } }),
+      db.accountReceivable.findMany({
+        where: { status: "RECEBIDA" },
+        include: { costCenter: true, chartOfAccount: true, customer: true },
+        take: 20,
+      }),
+      db.accountPayable.findMany({
+        where: { status: "PAGA" },
+        include: { costCenter: true, chartOfAccount: true, supplier: true },
+        take: 20,
+      }),
+      db.rawMaterial.findMany(),
+      db.packaging.findMany(),
+      db.product.findMany(),
+      db.productionOrder.findMany({ take: 20, orderBy: { productionDate: "desc" } }),
+      db.purchase.findMany({ include: { supplier: true }, take: 20, orderBy: { orderDate: "desc" } }),
+    ]);
+
+    costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
+    const received = receivedRes.status === "fulfilled" ? receivedRes.value : [];
+    const paid = paidRes.status === "fulfilled" ? paidRes.value : [];
+    const rawMaterials = rawMaterialsRes.status === "fulfilled" ? rawMaterialsRes.value : [];
+    const packagings = packagingsRes.status === "fulfilled" ? packagingsRes.value : [];
+    const products = productsRes.status === "fulfilled" ? productsRes.value : [];
+    const productionOrders = productionOrdersRes.status === "fulfilled" ? productionOrdersRes.value : [];
+    const purchases = purchasesRes.status === "fulfilled" ? purchasesRes.value : [];
 
     const totalReceitas = received.reduce((acc, r) => acc + Number(r.receivedAmount), 0);
     const totalDespesas = paid.reduce((acc, p) => acc + Number(p.paidAmount), 0);
 
-    const rawMaterials = await db.rawMaterial.findMany();
-    const packagings = await db.packaging.findMany();
-    const products = await db.product.findMany();
-
     const totalRawValue = rawMaterials.reduce((acc, m) => acc + Number(m.currentStock) * Number(m.unitCost), 0);
     const totalPackValue = packagings.reduce((acc, p) => acc + p.currentStock * Number(p.unitCost), 0);
     const totalProdValue = products.reduce((acc, pr) => acc + pr.stockQuantity * Number(pr.calculatedCost || pr.basePrice), 0);
-
-    const productionOrders = await db.productionOrder.findMany({ take: 20, orderBy: { productionDate: "desc" } });
-    const purchases = await db.purchase.findMany({ include: { supplier: true }, take: 20, orderBy: { orderDate: "desc" } });
 
     initialData = {
       financeiro: {

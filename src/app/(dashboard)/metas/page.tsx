@@ -4,23 +4,16 @@ import { Target, TrendingUp, CheckCircle, Clock, AlertTriangle, ShieldCheck } fr
 import { GoalsClientView } from "./GoalsClientView";
 
 export default async function GoalsPage() {
-  let goals: any[] = [];
-  let costCenters: any[] = [];
-
-  try {
-    goals = await db.performanceGoal.findMany({
+  const [goalsRes, costCentersRes] = await Promise.allSettled([
+    db.performanceGoal.findMany({
       include: { costCenter: true },
       orderBy: { endDate: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar metas:", e);
-  }
+    }),
+    db.costCenter.findMany(),
+  ]);
 
-  try {
-    costCenters = await db.costCenter.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar centros de custo:", e);
-  }
+  const goals = goalsRes.status === "fulfilled" ? goalsRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
 
   // Contadores de situação
   const atingidas = goals.filter((g) => g.status === "ATINGIDA" || g.status === "SUPERADA").length;

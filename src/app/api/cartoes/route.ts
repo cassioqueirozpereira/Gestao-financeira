@@ -7,51 +7,50 @@ export async function GET(req: NextRequest) {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
-    const cards = await db.creditCard.findMany({
-      include: {
-        bankAccount: true,
-        invoices: {
-          include: {
-            items: {
-              include: {
-                costCenter: true,
-                chartOfAccount: true,
+    const [cards, cardPayables, costCenters, chartOfAccounts] = await Promise.all([
+      db.creditCard.findMany({
+        include: {
+          bankAccount: true,
+          invoices: {
+            include: {
+              items: {
+                include: {
+                  costCenter: true,
+                  chartOfAccount: true,
+                },
               },
             },
+            orderBy: [{ referenceYear: "asc" }, { referenceMonth: "asc" }],
           },
-          orderBy: [{ referenceYear: "asc" }, { referenceMonth: "asc" }],
         },
-      },
-      orderBy: { nickname: "asc" },
-    });
-
-    // Também busca lançamentos a pagar feitos com cartão
-    const cardPayables = await db.accountPayable.findMany({
-      where: {
-        paymentType: "CARTAO",
-      },
-      include: {
-        costCenter: true,
-        chartOfAccount: true,
-      },
-      orderBy: { dueDate: "asc" },
-    });
-
-    const costCenters = await db.costCenter.findMany({ orderBy: { name: "asc" } });
-    const chartOfAccounts = await db.chartOfAccount.findMany({
-      where: {
-        type: {
-          in: [
-            "DESPESA_ADMINISTRATIVA",
-            "CUSTO_DIRETO",
-            "CUSTO_INDIRETO",
-            "DESPESA_COMERCIAL_MARKETING",
-            "INVESTIMENTO_ATIVO",
-          ],
+        orderBy: { nickname: "asc" },
+      }),
+      db.accountPayable.findMany({
+        where: {
+          paymentType: "CARTAO",
         },
-      },
-      orderBy: { code: "asc" },
-    });
+        include: {
+          costCenter: true,
+          chartOfAccount: true,
+        },
+        orderBy: { dueDate: "asc" },
+      }),
+      db.costCenter.findMany({ orderBy: { name: "asc" } }),
+      db.chartOfAccount.findMany({
+        where: {
+          type: {
+            in: [
+              "DESPESA_ADMINISTRATIVA",
+              "CUSTO_DIRETO",
+              "CUSTO_INDIRETO",
+              "DESPESA_COMERCIAL_MARKETING",
+              "INVESTIMENTO_ATIVO",
+            ],
+          },
+        },
+        orderBy: { code: "asc" },
+      }),
+    ]);
 
     return NextResponse.json({ cards, cardPayables, costCenters, chartOfAccounts });
   } catch (error: any) {

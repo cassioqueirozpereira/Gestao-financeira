@@ -38,12 +38,17 @@ export default function VencimentosPage() {
   const fetchTitles = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/vencimentos");
-      const data = await res.json();
+      const [res, resBanks] = await Promise.all([
+        fetch("/api/vencimentos"),
+        fetch("/api/bancos"),
+      ]);
+      const [data, dataBanks] = await Promise.all([
+        res.json(),
+        resBanks.json(),
+      ]);
+
       if (data.titles) setTitles(data.titles);
 
-      const resBanks = await fetch("/api/bancos");
-      const dataBanks = await resBanks.json();
       const accountsList = dataBanks.bankAccounts || dataBanks.accounts || [];
       if (accountsList.length > 0) {
         setBankAccounts(accountsList);

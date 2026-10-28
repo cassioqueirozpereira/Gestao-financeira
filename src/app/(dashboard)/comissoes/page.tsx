@@ -4,23 +4,18 @@ import { Percent, Plus, ShieldCheck, CheckCircle2, ArrowRight } from "lucide-rea
 import { CommissionsClientView } from "./CommissionsClientView";
 
 export default async function CommissionsPage() {
-  let rules: any[] = [];
-  let records: any[] = [];
-  let contracts: any[] = [];
-  let costCenters: any[] = [];
-  let accounts: any[] = [];
-
-  try {
-    rules = await db.commissionRule.findMany({
+  const [
+    rulesRes,
+    recordsRes,
+    contractsRes,
+    costCentersRes,
+    accountsRes,
+  ] = await Promise.allSettled([
+    db.commissionRule.findMany({
       include: { costCenter: true },
       orderBy: { createdAt: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar regras de comissão:", e);
-  }
-
-  try {
-    records = await db.commissionRecord.findMany({
+    }),
+    db.commissionRecord.findMany({
       include: {
         rule: true,
         partner: true,
@@ -30,35 +25,24 @@ export default async function CommissionsPage() {
         accountPayable: true,
       },
       orderBy: { createdAt: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar registros de comissão:", e);
-  }
-
-  try {
-    contracts = await db.contract.findMany({
+    }),
+    db.contract.findMany({
       include: { customer: true },
       orderBy: { createdAt: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contratos:", e);
-  }
-
-  try {
-    costCenters = await db.costCenter.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar centros de custo:", e);
-  }
-
-  try {
-    accounts = await db.chartOfAccount.findMany({
+    }),
+    db.costCenter.findMany(),
+    db.chartOfAccount.findMany({
       where: {
         type: { in: ["DESPESA_COMERCIAL_MARKETING", "CUSTO_DIRETO", "DESPESA_ADMINISTRATIVA"] },
       },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar plano de contas:", e);
-  }
+    }),
+  ]);
+
+  const rules = rulesRes.status === "fulfilled" ? rulesRes.value : [];
+  const records = recordsRes.status === "fulfilled" ? recordsRes.value : [];
+  const contracts = contractsRes.status === "fulfilled" ? contractsRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
+  const accounts = accountsRes.status === "fulfilled" ? accountsRes.value : [];
 
   return (
     <div className="space-y-6">

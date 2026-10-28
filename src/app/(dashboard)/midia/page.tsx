@@ -6,23 +6,16 @@ import { MediaClientView } from "./MediaClientView";
 export const dynamic = "force-dynamic";
 
 export default async function MediaPage() {
-  let expenses: any[] = [];
-  let costCenters: any[] = [];
-
-  try {
-    expenses = await db.mediaExpense.findMany({
+  const [expensesRes, costCentersRes] = await Promise.allSettled([
+    db.mediaExpense.findMany({
       include: { costCenter: true },
       orderBy: { date: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar despesas de mídia:", e);
-  }
+    }),
+    db.costCenter.findMany(),
+  ]);
 
-  try {
-    costCenters = await db.costCenter.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar centros de custo:", e);
-  }
+  const expenses = expensesRes.status === "fulfilled" ? expensesRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
 
   return (
     <div className="space-y-6">

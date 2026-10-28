@@ -6,36 +6,24 @@ import { CustosClientView } from "./CustosClientView";
 export const dynamic = "force-dynamic";
 
 export default async function CustosPage() {
-  let rawMaterials: any[] = [];
-  let packagings: any[] = [];
-  let products: any[] = [];
-
-  try {
-    rawMaterials = await db.rawMaterial.findMany({
+  const [rawRes, packRes, prodRes] = await Promise.allSettled([
+    db.rawMaterial.findMany({
       include: { supplier: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar insumos:", e);
-  }
-
-  try {
-    packagings = await db.packaging.findMany({
+    }),
+    db.packaging.findMany({
       include: { supplier: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar embalagens:", e);
-  }
-
-  try {
-    products = await db.product.findMany({
+    }),
+    db.product.findMany({
       include: { categoryRef: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar produtos:", e);
-  }
+    }),
+  ]);
+
+  const rawMaterials = rawRes.status === "fulfilled" ? rawRes.value : [];
+  const packagings = packRes.status === "fulfilled" ? packRes.value : [];
+  const products = prodRes.status === "fulfilled" ? prodRes.value : [];
 
   // Serializa Decimals / Dates
   const serializedRaw = rawMaterials.map((m) => ({

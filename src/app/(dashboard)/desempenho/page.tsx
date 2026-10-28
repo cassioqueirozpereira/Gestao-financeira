@@ -40,25 +40,35 @@ export default async function PerformanceDashboardPage({ searchParams }: Perform
     }
   }
 
-  // 1. Apuração de Receitas e Despesas
-  let payables: any[] = [];
-  let receivables: any[] = [];
-
-  try {
-    payables = await db.accountPayable.findMany({
+  // 1. Apuração paralela de dados para o painel de desempenho
+  const [
+    payablesRes,
+    receivablesRes,
+    customersRes,
+    ordersRes,
+    mediaExpensesRes,
+    capitalRes,
+  ] = await Promise.allSettled([
+    db.accountPayable.findMany({
       where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas a pagar no desempenho:", e);
-  }
-
-  try {
-    receivables = await db.accountReceivable.findMany({
+    }),
+    db.accountReceivable.findMany({
       where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas a receber no desempenho:", e);
-  }
+    }),
+    db.customer.findMany(),
+    db.order.findMany(),
+    db.mediaExpense.findMany({
+      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
+    }),
+    db.capitalRecovery.findFirst(),
+  ]);
+
+  const payables = payablesRes.status === "fulfilled" ? payablesRes.value : [];
+  const receivables = receivablesRes.status === "fulfilled" ? receivablesRes.value : [];
+  const customers = customersRes.status === "fulfilled" ? customersRes.value : [];
+  const orders = ordersRes.status === "fulfilled" ? ordersRes.value : [];
+  const mediaExpenses = mediaExpensesRes.status === "fulfilled" ? mediaExpensesRes.value : [];
+  const capital = capitalRes.status === "fulfilled" ? capitalRes.value : null;
 
   const totalReceivablePrevisto = receivables.reduce((s, r) => s + Number(r.originalAmount), 0);
   const totalRecebidoRealizado = receivables
@@ -84,40 +94,19 @@ export default async function PerformanceDashboardPage({ searchParams }: Perform
     totalReceivablePrevisto > 0 ? (valorVencidoReceber / totalReceivablePrevisto) * 100 : 0;
 
   // 2. Apuração Comercial (CRM)
-  const customers = await db.customer.findMany();
   const leadsCount = customers.length;
   const convertedCount = customers.filter(
     (c) => c.status === "CONVERTIDA" || c.status === "APROVADA"
   ).length;
   const taxaConversao = leadsCount > 0 ? (convertedCount / leadsCount) * 100 : null;
 
-  let orders: any[] = [];
-  try {
-    orders = await db.order.findMany();
-  } catch (e) {
-    console.error("Erro ao carregar pedidos no desempenho:", e);
-  }
   const totalVendasValor = orders.reduce((s, o) => s + Number(o.totalAmount || 0), 0);
   const ticketMedio = orders.length > 0 ? totalVendasValor / orders.length : null;
 
   // 3. Apuração Mídia Social
-  let mediaExpenses: any[] = [];
-  try {
-    mediaExpenses = await db.mediaExpense.findMany({
-      where: costCenterFilterId ? { costCenterId: costCenterFilterId } : {},
-    });
-  } catch (e) {
-    console.error("Erro ao carregar despesas de mídia no desempenho:", e);
-  }
   const totalInvestimentoMidia = mediaExpenses.reduce((s, m) => s + Number(m.spentAmount || 0), 0);
 
   // Capital D.A.
-  let capital: any = null;
-  try {
-    capital = await db.capitalRecovery.findFirst();
-  } catch (e) {
-    console.error("Erro ao carregar capital no desempenho:", e);
-  }
   const capInvestido = Number(capital?.initialCapital || 1600);
   const capRecuperado = Number(capital?.recoveredAmount || 0);
 

@@ -87,6 +87,25 @@ export async function clearSessionCookie() {
 }
 
 /**
+ * Retorna os dados essenciais da sessão diretamente do JWT criptografado (sem consulta ao banco)
+ * Utilizado para renderização instantânea do layout e headers sem sobrecarga de rede
+ */
+export async function getSessionUser(): Promise<SessionPayload | null> {
+  try {
+    const cookieStore = cookies();
+    const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
+
+    if (!sessionCookie?.value) {
+      return null;
+    }
+
+    return await verifySessionToken(sessionCookie.value);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Retorna os dados do usuário autenticado no servidor
  */
 export async function getCurrentUser() {

@@ -6,23 +6,46 @@ import { ConciliacaoClientView } from "./ConciliacaoClientView";
 export const dynamic = "force-dynamic";
 
 export default async function ConciliacaoPage() {
-  let bankAccounts: any[] = [];
-  let transactions: any[] = [];
-  let openPayables: any[] = [];
-  let openReceivables: any[] = [];
-  let chartOfAccounts: any[] = [];
-  let costCenters: any[] = [];
-  let suppliers: any[] = [];
-  let customers: any[] = [];
-
-  try {
-    bankAccounts = await db.bankAccount.findMany({
+  const [
+    banksRes,
+    openPayablesRes,
+    openReceivablesRes,
+    chartRes,
+    costCentersRes,
+    suppliersRes,
+    customersRes,
+  ] = await Promise.allSettled([
+    db.bankAccount.findMany({
       orderBy: { createdAt: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas bancárias:", e);
-  }
+    }),
+    db.accountPayable.findMany({
+      where: { status: { in: ["EM_ABERTO", "A_VENCER", "VENCIDA"] } },
+      include: { supplier: true, chartOfAccount: true },
+      orderBy: { dueDate: "asc" },
+    }),
+    db.accountReceivable.findMany({
+      where: { status: { in: ["A_RECEBER", "A_VENCER", "VENCIDA"] } },
+      include: { customer: true, chartOfAccount: true },
+      orderBy: { dueDate: "asc" },
+    }),
+    db.chartOfAccount.findMany({
+      where: { isActive: true },
+      orderBy: { code: "asc" },
+    }),
+    db.costCenter.findMany({ orderBy: { name: "asc" } }),
+    db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } }),
+    db.customer.findMany({ orderBy: { name: "asc" } }),
+  ]);
 
+  const bankAccounts = banksRes.status === "fulfilled" ? banksRes.value : [];
+  const openPayables = openPayablesRes.status === "fulfilled" ? openPayablesRes.value : [];
+  const openReceivables = openReceivablesRes.status === "fulfilled" ? openReceivablesRes.value : [];
+  const chartOfAccounts = chartRes.status === "fulfilled" ? chartRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
+  const suppliers = suppliersRes.status === "fulfilled" ? suppliersRes.value : [];
+  const customers = customersRes.status === "fulfilled" ? customersRes.value : [];
+
+  let transactions: any[] = [];
   const defaultBankId = bankAccounts[0]?.id;
 
   if (defaultBankId) {
@@ -34,38 +57,6 @@ export default async function ConciliacaoPage() {
     } catch (e) {
       console.error("Erro ao carregar transações bancárias:", e);
     }
-  }
-
-  try {
-    openPayables = await db.accountPayable.findMany({
-      where: { status: { in: ["EM_ABERTO", "A_VENCER", "VENCIDA"] } },
-      include: { supplier: true, chartOfAccount: true },
-      orderBy: { dueDate: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas a pagar:", e);
-  }
-
-  try {
-    openReceivables = await db.accountReceivable.findMany({
-      where: { status: { in: ["A_RECEBER", "A_VENCER", "VENCIDA"] } },
-      include: { customer: true, chartOfAccount: true },
-      orderBy: { dueDate: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar contas a receber:", e);
-  }
-
-  try {
-    chartOfAccounts = await db.chartOfAccount.findMany({
-      where: { isActive: true },
-      orderBy: { code: "asc" },
-    });
-    costCenters = await db.costCenter.findMany({ orderBy: { name: "asc" } });
-    suppliers = await db.supplier.findMany({ where: { isActive: true }, orderBy: { name: "asc" } });
-    customers = await db.customer.findMany({ orderBy: { name: "asc" } });
-  } catch (e) {
-    console.error("Erro ao carregar dados auxiliares:", e);
   }
 
   // Serializa Decimals e Dates

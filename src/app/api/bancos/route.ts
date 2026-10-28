@@ -27,14 +27,16 @@ const createCreditCardSchema = z.object({
 
 export async function GET() {
   try {
-    const bankAccounts = await db.bankAccount.findMany({
-      include: { company: true, creditCards: true },
-      orderBy: { createdAt: "desc" },
-    });
-    const creditCards = await db.creditCard.findMany({
-      include: { bankAccount: true },
-      orderBy: { createdAt: "desc" },
-    });
+    const [bankAccounts, creditCards] = await Promise.all([
+      db.bankAccount.findMany({
+        include: { company: true, creditCards: true },
+        orderBy: { createdAt: "desc" },
+      }),
+      db.creditCard.findMany({
+        include: { bankAccount: true },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
     return NextResponse.json({ bankAccounts, creditCards });
   } catch (error) {
     console.error("Erro ao buscar bancos e cartões:", error);

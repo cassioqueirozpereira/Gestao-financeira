@@ -6,56 +6,34 @@ import { EstoqueClientView } from "./EstoqueClientView";
 export const dynamic = "force-dynamic";
 
 export default async function EstoquePage() {
-  let rawMaterials: any[] = [];
-  let packagings: any[] = [];
-  let products: any[] = [];
-  let movements: any[] = [];
-  let suppliers: any[] = [];
-
-  try {
-    rawMaterials = await db.rawMaterial.findMany({
+  const [rawRes, packRes, prodRes, movRes, suppRes] = await Promise.allSettled([
+    db.rawMaterial.findMany({
       include: { supplier: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar matérias-primas:", e);
-  }
-
-  try {
-    packagings = await db.packaging.findMany({
+    }),
+    db.packaging.findMany({
       include: { supplier: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar embalagens:", e);
-  }
-
-  try {
-    products = await db.product.findMany({
+    }),
+    db.product.findMany({
       include: { categoryRef: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar produtos:", e);
-  }
-
-  try {
-    movements = await db.stockMovement.findMany({
+    }),
+    db.stockMovement.findMany({
       orderBy: { date: "desc" },
       take: 100,
-    });
-  } catch (e) {
-    console.error("Erro ao carregar movimentações de estoque:", e);
-  }
-
-  try {
-    suppliers = await db.supplier.findMany({
+    }),
+    db.supplier.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar fornecedores:", e);
-  }
+    }),
+  ]);
+
+  const rawMaterials = rawRes.status === "fulfilled" ? rawRes.value : [];
+  const packagings = packRes.status === "fulfilled" ? packRes.value : [];
+  const products = prodRes.status === "fulfilled" ? prodRes.value : [];
+  const movements = movRes.status === "fulfilled" ? movRes.value : [];
+  const suppliers = suppRes.status === "fulfilled" ? suppRes.value : [];
 
   // Serializa Decimals e Dates
   const serializedRaw = rawMaterials.map((m) => ({

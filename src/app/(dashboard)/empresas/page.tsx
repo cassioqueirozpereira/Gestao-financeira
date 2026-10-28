@@ -5,30 +5,23 @@ import { CompaniesClientView } from "./CompaniesClientView";
 export const dynamic = "force-dynamic";
 
 export default async function CompaniesAndCostCentersPage() {
-  let companies: any[] = [];
-  let costCenters: any[] = [];
-
-  try {
-    companies = await db.company.findMany({
+  const [companiesRes, costCentersRes] = await Promise.allSettled([
+    db.company.findMany({
       include: {
         costCenters: true,
       },
       orderBy: { createdAt: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar empresas:", e);
-  }
-
-  try {
-    costCenters = await db.costCenter.findMany({
+    }),
+    db.costCenter.findMany({
       include: {
         company: true,
       },
       orderBy: { createdAt: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar centros de custo:", e);
-  }
+    }),
+  ]);
+
+  const companies = companiesRes.status === "fulfilled" ? companiesRes.value : [];
+  const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
 
   return (
     <div className="space-y-6">

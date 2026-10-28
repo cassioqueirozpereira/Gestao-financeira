@@ -6,13 +6,13 @@ import { ProductionClientView } from "./ProductionClientView";
 export const dynamic = "force-dynamic";
 
 export default async function ProductionPage() {
-  let productionOrders: any[] = [];
-  let products: any[] = [];
-  let rawMaterials: any[] = [];
-  let packagings: any[] = [];
-
-  try {
-    productionOrders = await db.productionOrder.findMany({
+  const [
+    ordersRes,
+    productsRes,
+    rawMaterialsRes,
+    packagingsRes,
+  ] = await Promise.allSettled([
+    db.productionOrder.findMany({
       include: {
         product: {
           include: { categoryRef: true },
@@ -25,37 +25,25 @@ export default async function ProductionPage() {
         },
       },
       orderBy: { productionDate: "desc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar ordens de produção:", e);
-  }
-
-  try {
-    products = await db.product.findMany({
+    }),
+    db.product.findMany({
       include: { categoryRef: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar produtos:", e);
-  }
-
-  try {
-    rawMaterials = await db.rawMaterial.findMany({
+    }),
+    db.rawMaterial.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar matérias-primas:", e);
-  }
-
-  try {
-    packagings = await db.packaging.findMany({
+    }),
+    db.packaging.findMany({
       where: { isActive: true },
       orderBy: { name: "asc" },
-    });
-  } catch (e) {
-    console.error("Erro ao carregar embalagens:", e);
-  }
+    }),
+  ]);
+
+  const productionOrders = ordersRes.status === "fulfilled" ? ordersRes.value : [];
+  const products = productsRes.status === "fulfilled" ? productsRes.value : [];
+  const rawMaterials = rawMaterialsRes.status === "fulfilled" ? rawMaterialsRes.value : [];
+  const packagings = packagingsRes.status === "fulfilled" ? packagingsRes.value : [];
 
   const serializedOrders = productionOrders.map((o) => ({
     ...o,
