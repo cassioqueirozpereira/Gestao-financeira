@@ -224,7 +224,7 @@ export async function PUT(req: NextRequest) {
         where: { id },
         data: {
           status: "EM_ABERTO",
-          paidAmount: null,
+          paidAmount: 0,
           paidAt: null,
           bankAccountId: null,
         },

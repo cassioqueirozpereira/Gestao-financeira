@@ -2,6 +2,7 @@ import React from "react";
 import { db } from "@/lib/db";
 import { ShoppingBag, Lock, Info } from "lucide-react";
 import { CatalogClientView } from "./CatalogClientView";
+import { getStoredCatalogSections } from "@/app/api/catalogo/secoes/route";
 
 export const dynamic = "force-dynamic";
 
@@ -34,16 +35,7 @@ export default async function CatalogPage() {
     updatedAt: c.updatedAt.toISOString(),
   }));
 
-  const categoryLabels: Record<string, string> = {
-    VELAS_NORMAIS_COLORIDAS: "14.1. Velas Normais e Coloridas",
-    VELAS_DECORADAS_FLORES: "14.2. Velas Decoradas com Flores",
-    CHANTILLY_E_FLOR: "14.3. Chantilly e Flor",
-    VASOS_DECORATIVOS: "14.4. Vasos e Produtos Decorativos",
-    COLECAO_NATAL: "14.5. Coleção Natal",
-    ARVORES_NATAL_AVULSAS: "14.6. Árvores de Natal Avulsas",
-    ARVORES_NATAL_COPO: "14.7. Árvores de Natal Dentro do Copo",
-    RESINAS_DIVERSAS: "14.8. Resinas e Peças Decorativas",
-  };
+  const categoryLabels = getStoredCatalogSections();
 
   return (
     <div className="space-y-6">

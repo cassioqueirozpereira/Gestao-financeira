@@ -16,6 +16,8 @@ import {
   Plus,
   Search,
   Tag,
+  FolderTree,
+  Trash2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -32,11 +34,18 @@ export function CatalogClientView({
 }: CatalogClientViewProps) {
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
+  const [visualSections, setVisualSections] = useState<Record<string, string>>(categoryLabels);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Modal de Gestão de Seções Visuais do Catálogo
+  const [showSectionsModal, setShowSectionsModal] = useState(false);
+  const [editingSectionKey, setEditingSectionKey] = useState<string | null>(null);
+  const [sectionNameInput, setSectionNameInput] = useState("");
+  const [savingSection, setSavingSection] = useState(false);
 
   // Form states de criação
   const [createName, setCreateName] = useState("");
@@ -87,6 +96,82 @@ export function CatalogClientView({
 
   const handleApplyCalculatedPrice = () => {
     setBasePrice(suggestedSalePrice.toFixed(2));
+  };
+
+  const handleStartEditSection = (key: string, label: string) => {
+    setEditingSectionKey(key);
+    setSectionNameInput(label);
+  };
+
+  const handleCancelEditSection = () => {
+    setEditingSectionKey(null);
+    setSectionNameInput("");
+  };
+
+  const handleSaveVisualSection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sectionNameInput.trim()) return;
+    setSavingSection(true);
+    try {
+      const res = await fetch("/api/catalogo/secoes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: editingSectionKey,
+          label: sectionNameInput.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao salvar seção visual");
+
+      if (data.sections) {
+        setVisualSections(data.sections);
+      } else if (data.key && data.label) {
+        setVisualSections((prev) => ({ ...prev, [data.key]: data.label }));
+      }
+      setEditingSectionKey(null);
+      setSectionNameInput("");
+      setFeedback(`Seção visual salva com sucesso!`);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message || "Erro ao salvar seção visual");
+    } finally {
+      setSavingSection(false);
+    }
+  };
+
+  const handleDeleteVisualSection = async (key: string) => {
+    if (
+      !confirm(
+        `Deseja realmente remover esta seção visual? Itens com esta seção manterão o registro, mas a seção não será mais listada.`
+      )
+    ) {
+      return;
+    }
+    setSavingSection(true);
+    try {
+      const res = await fetch(`/api/catalogo/secoes?key=${encodeURIComponent(key)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao excluir seção visual");
+
+      if (data.sections) {
+        setVisualSections(data.sections);
+      } else {
+        setVisualSections((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }
+      setFeedback(`Seção visual removida com sucesso!`);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message || "Erro ao excluir seção visual");
+    } finally {
+      setSavingSection(false);
+    }
   };
 
   const handleSaveProduct = async (e: React.FormEvent) => {
@@ -178,7 +263,7 @@ export function CatalogClientView({
       p.name || "",
       p.description || "",
       p.categoryRef?.name || "",
-      categoryLabels[p.category] || p.category || "",
+      visualSections[p.category] || categoryLabels[p.category] || p.category || "",
     ]
       .join(" ")
       .toLowerCase();
@@ -199,13 +284,27 @@ export function CatalogClientView({
         <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
           Total no Catálogo: {products.length} itens cadastrados {searchTerm && `(${filteredProducts.length} filtrados)`}
         </span>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
-        >
-          <Plus className="w-4 h-4" />
-          Novo Item no Catálogo
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => {
+              setEditingSectionKey(null);
+              setSectionNameInput("");
+              setShowSectionsModal(true);
+            }}
+            className="flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-slate-300 dark:border-slate-700 shadow-sm transition"
+            title="Gerenciar e cadastrar seções visuais do catálogo"
+          >
+            <FolderTree className="w-4 h-4 text-indigo-500" />
+            <span>Seções Visuais do Catálogo</span>
+          </button>
+          <button
+            onClick={() => setShowCreateModal(true)}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md transition"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Novo Item no Catálogo</span>
+          </button>
+        </div>
       </div>
 
       {/* Barra de Pesquisa por Palavras-Chave e Categoria */}
@@ -264,7 +363,7 @@ export function CatalogClientView({
           <div key={category} className="space-y-3">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
               <Flame className="w-4 h-4 text-indigo-500" />
-              {categoryLabels[category] || category}
+              {visualSections[category] || categoryLabels[category] || category}
               <span className="text-xs font-normal text-slate-400">({items.length} itens)</span>
             </h2>
 
@@ -603,15 +702,30 @@ export function CatalogClientView({
               )}
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                  Seção Visual do Catálogo *
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase">
+                    Seção Visual do Catálogo *
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingSectionKey(null);
+                      setSectionNameInput("");
+                      setShowSectionsModal(true);
+                    }}
+                    className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                    title="Adicionar ou editar seções visuais pré-definidas"
+                  >
+                    <FolderTree className="w-3.5 h-3.5" />
+                    + Adicionar / Editar Seções
+                  </button>
+                </div>
                 <select
                   value={createCategory}
                   onChange={(e) => setCreateCategory(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
                 >
-                  {Object.entries(categoryLabels).map(([catKey, catLabel]) => (
+                  {Object.entries(visualSections).map(([catKey, catLabel]) => (
                     <option key={catKey} value={catKey}>
                       {catLabel}
                     </option>
@@ -715,6 +829,133 @@ export function CatalogClientView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Gerenciar / Adicionar / Editar Seções Visuais do Catálogo */}
+      {showSectionsModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <FolderTree className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                  Seções Visuais do Catálogo
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Adicione ou edite os títulos das seções visuais que organizam os produtos no catálogo.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowSectionsModal(false);
+                  setEditingSectionKey(null);
+                  setSectionNameInput("");
+                }}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Formulário de Adicionar / Editar Seção */}
+            <form onSubmit={handleSaveVisualSection} className="pt-4 pb-3 border-b border-slate-200 dark:border-slate-800">
+              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 uppercase mb-1">
+                {editingSectionKey ? "Editar Seção Visual Selecionada" : "Cadastrar Nova Seção Visual"}
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: 14.9. Difusores e Home Sprays"
+                  value={sectionNameInput}
+                  onChange={(e) => setSectionNameInput(e.target.value)}
+                  className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="submit"
+                  disabled={savingSection || !sectionNameInput.trim()}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-sm transition whitespace-nowrap"
+                >
+                  {savingSection ? "Salvando..." : editingSectionKey ? "Atualizar" : "Adicionar"}
+                </button>
+                {editingSectionKey && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEditSection}
+                    className="px-3 py-2 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold text-xs rounded-xl hover:bg-slate-300 transition"
+                  >
+                    Cancelar
+                  </button>
+                )}
+              </div>
+            </form>
+
+            {/* Lista das Seções Cadastradas */}
+            <div className="flex-1 overflow-y-auto py-3 space-y-2 pr-1">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                Seções Cadastradas ({Object.keys(visualSections).length})
+              </span>
+              {Object.entries(visualSections).map(([secKey, secLabel]) => {
+                const isEditingThis = editingSectionKey === secKey;
+                const countItems = products.filter((p) => p.category === secKey).length;
+
+                return (
+                  <div
+                    key={secKey}
+                    className={`flex items-center justify-between p-2.5 rounded-xl border text-xs transition ${
+                      isEditingThis
+                        ? "bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-800"
+                        : "bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-800 hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 pr-2">
+                      <Tag className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">
+                        {secLabel}
+                      </span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 shrink-0 font-medium">
+                        {countItems} {countItems === 1 ? "item" : "itens"}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditSection(secKey, secLabel)}
+                        className="p-1.5 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition"
+                        title="Editar nome desta seção"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteVisualSection(secKey)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition"
+                        title="Remover seção visual"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSectionsModal(false);
+                  setEditingSectionKey(null);
+                  setSectionNameInput("");
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Concluir
+              </button>
+            </div>
           </div>
         </div>
       )}
