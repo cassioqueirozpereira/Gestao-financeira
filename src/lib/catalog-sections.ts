@@ -5,14 +5,14 @@ const SECTIONS_FILE_PATH = path.join(process.cwd(), "src", "data", "catalog-sect
 
 // Seções visuais pré-definidas padrão
 export const DEFAULT_CATALOG_SECTIONS: Record<string, string> = {
-  VELAS_NORMAIS_COLORIDAS: "14.1. Velas Normais e Coloridas",
-  VELAS_DECORADAS_FLORES: "14.2. Velas Decoradas com Flores",
-  CHANTILLY_E_FLOR: "14.3. Chantilly e Flor",
-  VASOS_DECORATIVOS: "14.4. Vasos e Produtos Decorativos",
-  COLECAO_NATAL: "14.5. Coleção Natal",
-  ARVORES_NATAL_AVULSAS: "14.6. Árvores de Natal Avulsas",
-  ARVORES_NATAL_COPO: "14.7. Árvores de Natal Dentro do Copo",
-  RESINAS_DIVERSAS: "14.8. Resinas e Peças Decorativas",
+  VELAS_NORMAIS_COLORIDAS: "Velas Normais e Coloridas",
+  VELAS_DECORADAS_FLORES: "Velas Decoradas com Flores",
+  CHANTILLY_E_FLOR: "Chantilly e Flor",
+  VASOS_DECORATIVOS: "Vasos e Produtos Decorativos",
+  COLECAO_NATAL: "Coleção Natal",
+  ARVORES_NATAL_AVULSAS: "Árvores de Natal Avulsas",
+  ARVORES_NATAL_COPO: "Árvores de Natal Dentro do Copo",
+  RESINAS_DIVERSAS: "Resinas e Peças Decorativas",
 };
 
 export function getStoredCatalogSections(): Record<string, string> {

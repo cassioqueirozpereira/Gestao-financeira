@@ -47,8 +47,24 @@ export default async function ComprasPage() {
 
   const purchases = purchasesRes.status === "fulfilled" ? purchasesRes.value : [];
   const suppliers = suppliersRes.status === "fulfilled" ? suppliersRes.value : [];
-  const rawMaterials = rawRes.status === "fulfilled" ? rawRes.value : [];
-  const packagings = packRes.status === "fulfilled" ? packRes.value : [];
+  let rawMaterials: any[] = rawRes.status === "fulfilled" ? rawRes.value : [];
+  if (rawMaterials.length === 0 && rawRes.status === "rejected") {
+    try {
+      rawMaterials = await db.rawMaterial.findMany({
+        select: { id: true, name: true, unit: true, currentStock: true, minStock: true, unitCost: true, isActive: true },
+      });
+    } catch {}
+  }
+
+  let packagings: any[] = packRes.status === "fulfilled" ? packRes.value : [];
+  if (packagings.length === 0 && packRes.status === "rejected") {
+    try {
+      packagings = await db.packaging.findMany({
+        select: { id: true, name: true, unit: true, currentStock: true, minStock: true, unitCost: true, isActive: true },
+      });
+    } catch {}
+  }
+
   const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
   const chartOfAccounts = chartRes.status === "fulfilled" ? chartRes.value : [];
   const creditCards = cardsRes.status === "fulfilled" ? cardsRes.value : [];

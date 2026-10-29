@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ShoppingBag,
   Lock,
@@ -35,6 +35,22 @@ export function CatalogClientView({
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
   const [visualSections, setVisualSections] = useState<Record<string, string>>(categoryLabels);
+
+  // Sincroniza com localStorage no carregamento do cliente
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("da_catalog_visual_sections");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setVisualSections((prev) => {
+          const merged = { ...prev, ...parsed };
+          return merged;
+        });
+      }
+    } catch (e) {
+      console.warn("Erro ao ler seções visuais do localStorage:", e);
+    }
+  }, []);
   const [editingProduct, setEditingProduct] = useState<any | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -108,17 +124,16 @@ export function CatalogClientView({
     setSectionNameInput("");
   };
 
-  const handleSaveVisualSection = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!sectionNameInput.trim()) return;
+  const saveSectionAction = async (nameToSave: string, keyToEdit: string | null) => {
+    if (!nameToSave.trim()) return;
     setSavingSection(true);
     try {
       const res = await fetch("/api/catalogo/secoes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: editingSectionKey,
-          label: sectionNameInput.trim(),
+          key: keyToEdit,
+          label: nameToSave.trim(),
         }),
       });
       const data = await res.json();
@@ -126,18 +141,32 @@ export function CatalogClientView({
 
       if (data.sections) {
         setVisualSections(data.sections);
+        try {
+          localStorage.setItem("da_catalog_visual_sections", JSON.stringify(data.sections));
+        } catch {}
       } else if (data.key && data.label) {
-        setVisualSections((prev) => ({ ...prev, [data.key]: data.label }));
+        setVisualSections((prev) => {
+          const updated = { ...prev, [data.key]: data.label };
+          try {
+            localStorage.setItem("da_catalog_visual_sections", JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
       }
       setEditingSectionKey(null);
       setSectionNameInput("");
-      setFeedback(`Seção visual salva com sucesso!`);
+      setFeedback(`Seção visual "${nameToSave.trim()}" salva com sucesso!`);
       router.refresh();
     } catch (err: any) {
       alert(err.message || "Erro ao salvar seção visual");
     } finally {
       setSavingSection(false);
     }
+  };
+
+  const handleSaveVisualSection = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await saveSectionAction(sectionNameInput, editingSectionKey);
   };
 
   const handleDeleteVisualSection = async (key: string) => {
@@ -158,10 +187,16 @@ export function CatalogClientView({
 
       if (data.sections) {
         setVisualSections(data.sections);
+        try {
+          localStorage.setItem("da_catalog_visual_sections", JSON.stringify(data.sections));
+        } catch {}
       } else {
         setVisualSections((prev) => {
           const next = { ...prev };
           delete next[key];
+          try {
+            localStorage.setItem("da_catalog_visual_sections", JSON.stringify(next));
+          } catch {}
           return next;
         });
       }
@@ -946,14 +981,18 @@ export function CatalogClientView({
             <div className="pt-3 border-t border-slate-200 dark:border-slate-800 flex justify-end">
               <button
                 type="button"
-                onClick={() => {
+                disabled={savingSection}
+                onClick={async () => {
+                  if (sectionNameInput.trim() && !savingSection) {
+                    await saveSectionAction(sectionNameInput, editingSectionKey);
+                  }
                   setShowSectionsModal(false);
                   setEditingSectionKey(null);
                   setSectionNameInput("");
                 }}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
               >
-                Concluir
+                {savingSection ? "Salvando..." : "Concluir"}
               </button>
             </div>
           </div>

@@ -35,7 +35,16 @@ export default async function CatalogPage() {
     updatedAt: c.updatedAt.toISOString(),
   }));
 
-  const categoryLabels = getStoredCatalogSections();
+  const storedSections = getStoredCatalogSections();
+  const categoryLabels: Record<string, string> = { ...storedSections };
+
+  // Mescla categorias salvas no PostgreSQL para garantir persistência total mesmo após F5 ou em ambientes serverless
+  officialCategories.forEach((cat) => {
+    if (cat.isActive !== false) {
+      const k = cat.code || cat.name;
+      categoryLabels[k] = cat.name;
+    }
+  });
 
   return (
     <div className="space-y-6">

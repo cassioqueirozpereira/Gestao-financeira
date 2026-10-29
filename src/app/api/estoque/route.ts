@@ -10,15 +10,33 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const itemType = searchParams.get("type"); // MATERIA_PRIMA, EMBALAGEM, PRODUTO_ACABADO, ALL
 
-    const [rawMaterials, packagings, products, costCenters, chartOfAccounts] = await Promise.all([
-      db.rawMaterial.findMany({
+    let rawMaterials: any[] = [];
+    try {
+      rawMaterials = await db.rawMaterial.findMany({
         include: { supplier: true, costCenter: true, chartOfAccount: true },
         orderBy: { name: "asc" },
-      }),
-      db.packaging.findMany({
+      });
+    } catch {
+      rawMaterials = await db.rawMaterial.findMany({
+        include: { supplier: true },
+        orderBy: { name: "asc" },
+      });
+    }
+
+    let packagings: any[] = [];
+    try {
+      packagings = await db.packaging.findMany({
         include: { supplier: true, costCenter: true, chartOfAccount: true },
         orderBy: { name: "asc" },
-      }),
+      });
+    } catch {
+      packagings = await db.packaging.findMany({
+        include: { supplier: true },
+        orderBy: { name: "asc" },
+      });
+    }
+
+    const [products, costCenters, chartOfAccounts] = await Promise.all([
       db.product.findMany({
         include: { categoryRef: true },
         orderBy: { name: "asc" },
@@ -102,23 +120,43 @@ export async function POST(req: NextRequest) {
     const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
 
     if (itemType === "MATERIA_PRIMA") {
-      const raw = await db.rawMaterial.create({
-        data: {
-          name: name.trim(),
-          code: code?.trim() ? code.trim().toUpperCase() : null,
-          category: category?.trim() || "GERAL",
-          unit: unit.trim().toUpperCase(),
-          currentStock: Number(currentStock),
-          minStock: Number(minStock),
-          unitCost: Number(unitCost),
-          costCenterId: costCenterId || null,
-          chartOfAccountId: chartOfAccountId || null,
-          supplierId: supplierId || null,
-          notes: notes?.trim() || null,
-          isActive: true,
-        },
-        include: { supplier: true, costCenter: true, chartOfAccount: true },
-      });
+      let raw: any;
+      try {
+        raw = await db.rawMaterial.create({
+          data: {
+            name: name.trim(),
+            code: code?.trim() ? code.trim().toUpperCase() : null,
+            category: category?.trim() || "GERAL",
+            unit: unit.trim().toUpperCase(),
+            currentStock: Number(currentStock),
+            minStock: Number(minStock),
+            unitCost: Number(unitCost),
+            costCenterId: costCenterId || null,
+            chartOfAccountId: chartOfAccountId || null,
+            supplierId: supplierId || null,
+            notes: notes?.trim() || null,
+            isActive: true,
+          },
+          include: { supplier: true, costCenter: true, chartOfAccount: true },
+        });
+      } catch (err) {
+        // Fallback caso colunas de centro de custo / plano de contas ainda não tenham sido migradas no PostgreSQL
+        raw = await db.rawMaterial.create({
+          data: {
+            name: name.trim(),
+            code: code?.trim() ? code.trim().toUpperCase() : null,
+            category: category?.trim() || "GERAL",
+            unit: unit.trim().toUpperCase(),
+            currentStock: Number(currentStock),
+            minStock: Number(minStock),
+            unitCost: Number(unitCost),
+            supplierId: supplierId || null,
+            notes: notes?.trim() || null,
+            isActive: true,
+          },
+          include: { supplier: true },
+        });
+      }
 
       // Registra movimentação inicial se estoque > 0
       if (Number(currentStock) > 0) {
@@ -153,22 +191,41 @@ export async function POST(req: NextRequest) {
     }
 
     if (itemType === "EMBALAGEM") {
-      const pack = await db.packaging.create({
-        data: {
-          name: name.trim(),
-          code: code?.trim() ? code.trim().toUpperCase() : null,
-          unit: unit.trim().toUpperCase() || "UN",
-          currentStock: parseInt(currentStock, 10) || 0,
-          minStock: parseInt(minStock, 10) || 10,
-          unitCost: Number(unitCost) || 0,
-          costCenterId: costCenterId || null,
-          chartOfAccountId: chartOfAccountId || null,
-          supplierId: supplierId || null,
-          notes: notes?.trim() || null,
-          isActive: true,
-        },
-        include: { supplier: true, costCenter: true, chartOfAccount: true },
-      });
+      let pack: any;
+      try {
+        pack = await db.packaging.create({
+          data: {
+            name: name.trim(),
+            code: code?.trim() ? code.trim().toUpperCase() : null,
+            unit: unit.trim().toUpperCase() || "UN",
+            currentStock: parseInt(currentStock, 10) || 0,
+            minStock: parseInt(minStock, 10) || 10,
+            unitCost: Number(unitCost) || 0,
+            costCenterId: costCenterId || null,
+            chartOfAccountId: chartOfAccountId || null,
+            supplierId: supplierId || null,
+            notes: notes?.trim() || null,
+            isActive: true,
+          },
+          include: { supplier: true, costCenter: true, chartOfAccount: true },
+        });
+      } catch (err) {
+        // Fallback caso colunas de centro de custo / plano de contas ainda não tenham sido migradas no PostgreSQL
+        pack = await db.packaging.create({
+          data: {
+            name: name.trim(),
+            code: code?.trim() ? code.trim().toUpperCase() : null,
+            unit: unit.trim().toUpperCase() || "UN",
+            currentStock: parseInt(currentStock, 10) || 0,
+            minStock: parseInt(minStock, 10) || 10,
+            unitCost: Number(unitCost) || 0,
+            supplierId: supplierId || null,
+            notes: notes?.trim() || null,
+            isActive: true,
+          },
+          include: { supplier: true },
+        });
+      }
 
       if (parseInt(currentStock, 10) > 0) {
         await db.stockMovement.create({
@@ -236,22 +293,40 @@ export async function PUT(req: NextRequest) {
     const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
 
     if (itemType === "MATERIA_PRIMA") {
-      const updated = await db.rawMaterial.update({
-        where: { id },
-        data: {
-          name: name ? name.trim() : undefined,
-          code: code?.trim() ? code.trim().toUpperCase() : null,
-          category: category ? category.trim() : undefined,
-          unit: unit ? unit.trim().toUpperCase() : undefined,
-          minStock: minStock !== undefined ? Number(minStock) : undefined,
-          unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
-          costCenterId: costCenterId !== undefined ? (costCenterId || null) : undefined,
-          chartOfAccountId: chartOfAccountId !== undefined ? (chartOfAccountId || null) : undefined,
-          supplierId: supplierId !== undefined ? (supplierId || null) : undefined,
-          notes: notes !== undefined ? notes?.trim() : undefined,
-        },
-        include: { supplier: true, costCenter: true, chartOfAccount: true },
-      });
+      let updated: any;
+      try {
+        updated = await db.rawMaterial.update({
+          where: { id },
+          data: {
+            name: name ? name.trim() : undefined,
+            code: code?.trim() ? code.trim().toUpperCase() : null,
+            category: category ? category.trim() : undefined,
+            unit: unit ? unit.trim().toUpperCase() : undefined,
+            minStock: minStock !== undefined ? Number(minStock) : undefined,
+            unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
+            costCenterId: costCenterId !== undefined ? (costCenterId || null) : undefined,
+            chartOfAccountId: chartOfAccountId !== undefined ? (chartOfAccountId || null) : undefined,
+            supplierId: supplierId !== undefined ? (supplierId || null) : undefined,
+            notes: notes !== undefined ? notes?.trim() : undefined,
+          },
+          include: { supplier: true, costCenter: true, chartOfAccount: true },
+        });
+      } catch (err) {
+        updated = await db.rawMaterial.update({
+          where: { id },
+          data: {
+            name: name ? name.trim() : undefined,
+            code: code?.trim() ? code.trim().toUpperCase() : null,
+            category: category ? category.trim() : undefined,
+            unit: unit ? unit.trim().toUpperCase() : undefined,
+            minStock: minStock !== undefined ? Number(minStock) : undefined,
+            unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
+            supplierId: supplierId !== undefined ? (supplierId || null) : undefined,
+            notes: notes !== undefined ? notes?.trim() : undefined,
+          },
+          include: { supplier: true },
+        });
+      }
 
       await logAudit({
         userId: user.id,
@@ -267,21 +342,38 @@ export async function PUT(req: NextRequest) {
     }
 
     if (itemType === "EMBALAGEM") {
-      const updated = await db.packaging.update({
-        where: { id },
-        data: {
-          name: name ? name.trim() : undefined,
-          code: code?.trim() ? code.trim().toUpperCase() : null,
-          unit: unit ? unit.trim().toUpperCase() : undefined,
-          minStock: minStock !== undefined ? parseInt(minStock, 10) : undefined,
-          unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
-          costCenterId: costCenterId !== undefined ? (costCenterId || null) : undefined,
-          chartOfAccountId: chartOfAccountId !== undefined ? (chartOfAccountId || null) : undefined,
-          supplierId: supplierId !== undefined ? (supplierId || null) : undefined,
-          notes: notes !== undefined ? notes?.trim() : undefined,
-        },
-        include: { supplier: true, costCenter: true, chartOfAccount: true },
-      });
+      let updated: any;
+      try {
+        updated = await db.packaging.update({
+          where: { id },
+          data: {
+            name: name ? name.trim() : undefined,
+            code: code?.trim() ? code.trim().toUpperCase() : null,
+            unit: unit ? unit.trim().toUpperCase() : undefined,
+            minStock: minStock !== undefined ? parseInt(minStock, 10) : undefined,
+            unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
+            costCenterId: costCenterId !== undefined ? (costCenterId || null) : undefined,
+            chartOfAccountId: chartOfAccountId !== undefined ? (chartOfAccountId || null) : undefined,
+            supplierId: supplierId !== undefined ? (supplierId || null) : undefined,
+            notes: notes !== undefined ? notes?.trim() : undefined,
+          },
+          include: { supplier: true, costCenter: true, chartOfAccount: true },
+        });
+      } catch (err) {
+        updated = await db.packaging.update({
+          where: { id },
+          data: {
+            name: name ? name.trim() : undefined,
+            code: code?.trim() ? code.trim().toUpperCase() : null,
+            unit: unit ? unit.trim().toUpperCase() : undefined,
+            minStock: minStock !== undefined ? parseInt(minStock, 10) : undefined,
+            unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
+            supplierId: supplierId !== undefined ? (supplierId || null) : undefined,
+            notes: notes !== undefined ? notes?.trim() : undefined,
+          },
+          include: { supplier: true },
+        });
+      }
 
       await logAudit({
         userId: user.id,

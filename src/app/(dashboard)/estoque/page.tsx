@@ -36,8 +36,30 @@ export default async function EstoquePage() {
     }),
   ]);
 
-  const rawMaterials = rawRes.status === "fulfilled" ? rawRes.value : [];
-  const packagings = packRes.status === "fulfilled" ? packRes.value : [];
+  let rawMaterials: any[] = rawRes.status === "fulfilled" ? rawRes.value : [];
+  if (rawMaterials.length === 0 && rawRes.status === "rejected") {
+    try {
+      rawMaterials = await db.rawMaterial.findMany({
+        include: { supplier: true },
+        orderBy: { name: "asc" },
+      });
+    } catch (e) {
+      console.error("Fallback rawMaterial.findMany:", e);
+    }
+  }
+
+  let packagings: any[] = packRes.status === "fulfilled" ? packRes.value : [];
+  if (packagings.length === 0 && packRes.status === "rejected") {
+    try {
+      packagings = await db.packaging.findMany({
+        include: { supplier: true },
+        orderBy: { name: "asc" },
+      });
+    } catch (e) {
+      console.error("Fallback packaging.findMany:", e);
+    }
+  }
+
   const products = prodRes.status === "fulfilled" ? prodRes.value : [];
   const movements = movRes.status === "fulfilled" ? movRes.value : [];
   const suppliers = suppRes.status === "fulfilled" ? suppRes.value : [];
@@ -45,20 +67,20 @@ export default async function EstoquePage() {
   const chartOfAccounts = accRes.status === "fulfilled" ? accRes.value : [];
 
   // Serializa Decimals e Dates
-  const serializedRaw = rawMaterials.map((m) => ({
+  const serializedRaw = rawMaterials.map((m: any) => ({
     ...m,
     currentStock: Number(m.currentStock),
     minStock: Number(m.minStock),
     unitCost: Number(m.unitCost),
-    createdAt: m.createdAt.toISOString(),
-    updatedAt: m.updatedAt.toISOString(),
+    createdAt: m.createdAt?.toISOString ? m.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: m.updatedAt?.toISOString ? m.updatedAt.toISOString() : new Date().toISOString(),
   }));
 
-  const serializedPack = packagings.map((p) => ({
+  const serializedPack = packagings.map((p: any) => ({
     ...p,
     unitCost: Number(p.unitCost),
-    createdAt: p.createdAt.toISOString(),
-    updatedAt: p.updatedAt.toISOString(),
+    createdAt: p.createdAt?.toISOString ? p.createdAt.toISOString() : new Date().toISOString(),
+    updatedAt: p.updatedAt?.toISOString ? p.updatedAt.toISOString() : new Date().toISOString(),
   }));
 
   const serializedProd = products.map((pr) => ({
