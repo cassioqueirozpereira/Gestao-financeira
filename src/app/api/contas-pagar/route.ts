@@ -206,6 +206,48 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ success: true, updated });
     }
 
+    // AÇÃO: ESTORNAR BAIXA DE PAGAMENTO
+    if (action === "revert" || action === "estorno" || action === "estornar") {
+      const paidAmount = Number(existing.paidAmount || existing.originalAmount);
+
+      // Se tinha conta bancária vinculada, estorna o saldo creditando de volta
+      if (existing.bankAccountId && paidAmount > 0) {
+        await db.bankAccount.update({
+          where: { id: existing.bankAccountId },
+          data: {
+            currentBalance: { increment: paidAmount },
+          },
+        });
+      }
+
+      const updated = await db.accountPayable.update({
+        where: { id },
+        data: {
+          status: "EM_ABERTO",
+          paidAmount: null,
+          paidAt: null,
+          bankAccountId: null,
+        },
+      });
+
+      const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
+      await logAudit({
+        userId: user.id,
+        action: "STATUS_CHANGE",
+        entity: "AccountPayable",
+        entityId: id,
+        newValues: { status: "EM_ABERTO", estornado: true, estornadoValor: paidAmount },
+        ipAddress,
+        description: `Estorno de baixa da conta a pagar: ${existing.description} (R$ ${paidAmount.toFixed(2)})`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        updated,
+        message: `Baixa de pagamento de ${existing.description} estornada com sucesso. Saldo bancário reajustado.`,
+      });
+    }
+
     // AÇÃO: PARCELAR CONTA A PAGAR EXISTENTE
     if (action === "parcelar") {
       const installments = Math.max(2, Math.min(60, Number(body.installmentsCount || 2)));

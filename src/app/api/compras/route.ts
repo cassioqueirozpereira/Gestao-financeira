@@ -100,14 +100,37 @@ export async function POST(req: NextRequest) {
 
       // 2. Se optou por gerar Contas a Pagar
       if (generatePayables && firstDueDate) {
-        // Busca centro de custo e plano de contas padrão se não fornecidos
+        // Tenta puxar o centro de custo e plano de contas pré-cadastrados no próprio item do estoque
         let cCenterId = costCenterId;
+        let cAccountId = chartOfAccountId;
+
+        if (!cCenterId || !cAccountId) {
+          const firstItem = items[0];
+          if (firstItem?.itemId) {
+            if (firstItem.itemType === "MATERIA_PRIMA") {
+              const raw = await tx.rawMaterial.findUnique({
+                where: { id: firstItem.itemId },
+                select: { costCenterId: true, chartOfAccountId: true },
+              });
+              if (!cCenterId && raw?.costCenterId) cCenterId = raw.costCenterId;
+              if (!cAccountId && raw?.chartOfAccountId) cAccountId = raw.chartOfAccountId;
+            } else if (firstItem.itemType === "EMBALAGEM") {
+              const pack = await tx.packaging.findUnique({
+                where: { id: firstItem.itemId },
+                select: { costCenterId: true, chartOfAccountId: true },
+              });
+              if (!cCenterId && pack?.costCenterId) cCenterId = pack.costCenterId;
+              if (!cAccountId && pack?.chartOfAccountId) cAccountId = pack.chartOfAccountId;
+            }
+          }
+        }
+
+        // Se ainda não definidos, usa fallback seguro
         if (!cCenterId) {
           const defaultCC = await tx.costCenter.findFirst({ where: { code: "VELAS" } });
           cCenterId = defaultCC ? defaultCC.id : (await tx.costCenter.findFirst())?.id;
         }
 
-        let cAccountId = chartOfAccountId;
         if (!cAccountId) {
           const defaultAcc = await tx.chartOfAccount.findFirst({
             where: { type: "CUSTO_DIRETO", isActive: true },

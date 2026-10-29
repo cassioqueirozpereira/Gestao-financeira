@@ -109,6 +109,8 @@ model CostCenter {
   partners           Partner[]
   debts              DebtObligation[]
   goals              PerformanceGoal[]
+  rawMaterials       RawMaterial[]
+  packagings         Packaging[]
 
   @@map("cost_centers")
 }
@@ -145,6 +147,8 @@ model ChartOfAccount {
 
   accountsPayable    AccountPayable[]
   accountsReceivable AccountReceivable[]
+  rawMaterials       RawMaterial[]
+  packagings         Packaging[]
 
   @@map("chart_of_accounts")
 }
@@ -701,20 +705,24 @@ model Product {
 }
 
 model RawMaterial {
-  id           String    @id @default(uuid())
-  code         String?   @unique
-  name         String
-  category     String
-  unit         String
-  currentStock Decimal   @default(0)
-  minStock     Decimal   @default(0)
-  unitCost     Decimal   @default(0)
-  supplierId   String?
-  supplier     Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  notes        String?
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id               String          @id @default(uuid())
+  code             String?         @unique
+  name             String
+  category         String
+  unit             String
+  currentStock     Decimal         @default(0)
+  minStock         Decimal         @default(0)
+  unitCost         Decimal         @default(0)
+  costCenterId     String?
+  costCenter       CostCenter?     @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  chartOfAccountId String?
+  chartOfAccount   ChartOfAccount? @relation(fields: [chartOfAccountId], references: [id], onDelete: SetNull)
+  supplierId       String?
+  supplier         Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  notes            String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   sheetItems   TechnicalSheetItem[]
   consumptions ProductionIngredientConsumption[]
@@ -723,19 +731,23 @@ model RawMaterial {
 }
 
 model Packaging {
-  id           String    @id @default(uuid())
-  code         String?   @unique
-  name         String
-  unit         String    @default("UN")
-  currentStock Int       @default(0)
-  minStock     Int       @default(10)
-  unitCost     Decimal   @default(0)
-  supplierId   String?
-  supplier     Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  notes        String?
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id               String          @id @default(uuid())
+  code             String?         @unique
+  name             String
+  unit             String          @default("UN")
+  currentStock     Int             @default(0)
+  minStock         Int             @default(10)
+  unitCost         Decimal         @default(0)
+  costCenterId     String?
+  costCenter       CostCenter?     @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  chartOfAccountId String?
+  chartOfAccount   ChartOfAccount? @relation(fields: [chartOfAccountId], references: [id], onDelete: SetNull)
+  supplierId       String?
+  supplier         Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  notes            String?
+  isActive         Boolean         @default(true)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   sheetPackagings TechnicalSheetPackaging[]
   consumptions    ProductionPackagingConsumption[]

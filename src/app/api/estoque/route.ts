@@ -10,20 +10,27 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const itemType = searchParams.get("type"); // MATERIA_PRIMA, EMBALAGEM, PRODUTO_ACABADO, ALL
 
-    const rawMaterials = await db.rawMaterial.findMany({
-      include: { supplier: true },
-      orderBy: { name: "asc" },
-    });
-
-    const packagings = await db.packaging.findMany({
-      include: { supplier: true },
-      orderBy: { name: "asc" },
-    });
-
-    const products = await db.product.findMany({
-      include: { categoryRef: true },
-      orderBy: { name: "asc" },
-    });
+    const [rawMaterials, packagings, products, costCenters, chartOfAccounts] = await Promise.all([
+      db.rawMaterial.findMany({
+        include: { supplier: true, costCenter: true, chartOfAccount: true },
+        orderBy: { name: "asc" },
+      }),
+      db.packaging.findMany({
+        include: { supplier: true, costCenter: true, chartOfAccount: true },
+        orderBy: { name: "asc" },
+      }),
+      db.product.findMany({
+        include: { categoryRef: true },
+        orderBy: { name: "asc" },
+      }),
+      db.costCenter.findMany({
+        orderBy: { name: "asc" },
+      }),
+      db.chartOfAccount.findMany({
+        where: { isActive: true },
+        orderBy: { code: "asc" },
+      }),
+    ]);
 
     const lowStockRaw = rawMaterials.filter((m) => Number(m.currentStock) <= Number(m.minStock));
     const lowStockPack = packagings.filter((p) => p.currentStock <= p.minStock);
@@ -46,6 +53,8 @@ export async function GET(req: NextRequest) {
       rawMaterials,
       packagings,
       products,
+      costCenters,
+      chartOfAccounts,
       alerts: {
         rawMaterials: lowStockRaw,
         packagings: lowStockPack,
@@ -71,7 +80,20 @@ export async function POST(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
     const body = await req.json();
-    const { itemType, name, code, category, unit = "UN", currentStock = 0, minStock = 5, unitCost = 0, supplierId, notes } = body;
+    const {
+      itemType,
+      name,
+      code,
+      category,
+      unit = "UN",
+      currentStock = 0,
+      minStock = 5,
+      unitCost = 0,
+      costCenterId,
+      chartOfAccountId,
+      supplierId,
+      notes,
+    } = body;
 
     if (!itemType || !name || !name.trim()) {
       return NextResponse.json({ error: "Tipo de item e nome são obrigatórios" }, { status: 400 });
@@ -89,11 +111,13 @@ export async function POST(req: NextRequest) {
           currentStock: Number(currentStock),
           minStock: Number(minStock),
           unitCost: Number(unitCost),
+          costCenterId: costCenterId || null,
+          chartOfAccountId: chartOfAccountId || null,
           supplierId: supplierId || null,
           notes: notes?.trim() || null,
           isActive: true,
         },
-        include: { supplier: true },
+        include: { supplier: true, costCenter: true, chartOfAccount: true },
       });
 
       // Registra movimentação inicial se estoque > 0
@@ -137,11 +161,13 @@ export async function POST(req: NextRequest) {
           currentStock: parseInt(currentStock, 10) || 0,
           minStock: parseInt(minStock, 10) || 10,
           unitCost: Number(unitCost) || 0,
+          costCenterId: costCenterId || null,
+          chartOfAccountId: chartOfAccountId || null,
           supplierId: supplierId || null,
           notes: notes?.trim() || null,
           isActive: true,
         },
-        include: { supplier: true },
+        include: { supplier: true, costCenter: true, chartOfAccount: true },
       });
 
       if (parseInt(currentStock, 10) > 0) {
@@ -179,5 +205,100 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("Erro ao criar item de estoque:", error);
     return NextResponse.json({ error: error.message || "Erro ao salvar item" }, { status: 500 });
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
+    const body = await req.json();
+    const {
+      id,
+      itemType,
+      name,
+      code,
+      category,
+      unit,
+      minStock,
+      unitCost,
+      costCenterId,
+      chartOfAccountId,
+      supplierId,
+      notes,
+    } = body;
+
+    if (!id || !itemType) {
+      return NextResponse.json({ error: "ID e tipo de item são obrigatórios" }, { status: 400 });
+    }
+
+    const ipAddress = req.headers.get("x-forwarded-for") || "127.0.0.1";
+
+    if (itemType === "MATERIA_PRIMA") {
+      const updated = await db.rawMaterial.update({
+        where: { id },
+        data: {
+          name: name ? name.trim() : undefined,
+          code: code?.trim() ? code.trim().toUpperCase() : null,
+          category: category ? category.trim() : undefined,
+          unit: unit ? unit.trim().toUpperCase() : undefined,
+          minStock: minStock !== undefined ? Number(minStock) : undefined,
+          unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
+          costCenterId: costCenterId !== undefined ? (costCenterId || null) : undefined,
+          chartOfAccountId: chartOfAccountId !== undefined ? (chartOfAccountId || null) : undefined,
+          supplierId: supplierId !== undefined ? (supplierId || null) : undefined,
+          notes: notes !== undefined ? notes?.trim() : undefined,
+        },
+        include: { supplier: true, costCenter: true, chartOfAccount: true },
+      });
+
+      await logAudit({
+        userId: user.id,
+        action: "UPDATE",
+        entity: "RawMaterial",
+        entityId: id,
+        newValues: updated,
+        ipAddress,
+        description: `Edição de matéria-prima: ${updated.name}`,
+      });
+
+      return NextResponse.json({ success: true, item: updated });
+    }
+
+    if (itemType === "EMBALAGEM") {
+      const updated = await db.packaging.update({
+        where: { id },
+        data: {
+          name: name ? name.trim() : undefined,
+          code: code?.trim() ? code.trim().toUpperCase() : null,
+          unit: unit ? unit.trim().toUpperCase() : undefined,
+          minStock: minStock !== undefined ? parseInt(minStock, 10) : undefined,
+          unitCost: unitCost !== undefined ? Number(unitCost) : undefined,
+          costCenterId: costCenterId !== undefined ? (costCenterId || null) : undefined,
+          chartOfAccountId: chartOfAccountId !== undefined ? (chartOfAccountId || null) : undefined,
+          supplierId: supplierId !== undefined ? (supplierId || null) : undefined,
+          notes: notes !== undefined ? notes?.trim() : undefined,
+        },
+        include: { supplier: true, costCenter: true, chartOfAccount: true },
+      });
+
+      await logAudit({
+        userId: user.id,
+        action: "UPDATE",
+        entity: "Packaging",
+        entityId: id,
+        newValues: updated,
+        ipAddress,
+        description: `Edição de embalagem: ${updated.name}`,
+      });
+
+      return NextResponse.json({ success: true, item: updated });
+    }
+
+    return NextResponse.json({ error: "Tipo de item não suportado para edição" }, { status: 400 });
+  } catch (error: any) {
+    console.error("Erro ao atualizar item de estoque:", error);
+    return NextResponse.json({ error: error.message || "Erro ao atualizar item" }, { status: 500 });
   }
 }

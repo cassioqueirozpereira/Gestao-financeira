@@ -20,6 +20,7 @@ import {
   X,
   Scale,
   Sparkles,
+  Edit2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -29,6 +30,8 @@ interface EstoqueClientViewProps {
   initialProducts: any[];
   initialMovements: any[];
   suppliers: any[];
+  costCenters?: any[];
+  chartOfAccounts?: any[];
 }
 
 export function EstoqueClientView({
@@ -37,6 +40,8 @@ export function EstoqueClientView({
   initialProducts,
   initialMovements,
   suppliers,
+  costCenters = [],
+  chartOfAccounts = [],
 }: EstoqueClientViewProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<
@@ -73,6 +78,8 @@ export function EstoqueClientView({
   const [rawCurrentStock, setRawCurrentStock] = useState("0");
   const [rawMinStock, setRawMinStock] = useState("5");
   const [rawUnitCost, setRawUnitCost] = useState("0");
+  const [rawCostCenterId, setRawCostCenterId] = useState("");
+  const [rawChartOfAccountId, setRawChartOfAccountId] = useState("");
   const [rawSupplierId, setRawSupplierId] = useState("");
   const [savingRaw, setSavingRaw] = useState(false);
 
@@ -83,8 +90,24 @@ export function EstoqueClientView({
   const [packCurrentStock, setPackCurrentStock] = useState("0");
   const [packMinStock, setPackMinStock] = useState("20");
   const [packUnitCost, setPackUnitCost] = useState("0");
+  const [packCostCenterId, setPackCostCenterId] = useState("");
+  const [packChartOfAccountId, setPackChartOfAccountId] = useState("");
   const [packSupplierId, setPackSupplierId] = useState("");
   const [savingPack, setSavingPack] = useState(false);
+
+  // Form states - Editar Item Existente
+  const [editingItem, setEditingItem] = useState<any | null>(null);
+  const [editingItemType, setEditingItemType] = useState<"MATERIA_PRIMA" | "EMBALAGEM">("MATERIA_PRIMA");
+  const [editName, setEditName] = useState("");
+  const [editCode, setEditCode] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editUnit, setEditUnit] = useState("UN");
+  const [editMinStock, setEditMinStock] = useState("");
+  const [editUnitCost, setEditUnitCost] = useState("");
+  const [editCostCenterId, setEditCostCenterId] = useState("");
+  const [editChartOfAccountId, setEditChartOfAccountId] = useState("");
+  const [editSupplierId, setEditSupplierId] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const formatBRL = (val: number) => {
     return new Intl.NumberFormat("pt-BR", {
@@ -220,6 +243,8 @@ export function EstoqueClientView({
           currentStock: parseFloat(rawCurrentStock) || 0,
           minStock: parseFloat(rawMinStock) || 0,
           unitCost: parseFloat(rawUnitCost) || 0,
+          costCenterId: rawCostCenterId || null,
+          chartOfAccountId: rawChartOfAccountId || null,
           supplierId: rawSupplierId || null,
         }),
       });
@@ -229,6 +254,15 @@ export function EstoqueClientView({
 
       setRawMaterials((prev) => [...prev, data.item].sort((a, b) => a.name.localeCompare(b.name)));
       setShowRawModal(false);
+      // Limpa campos
+      setRawName("");
+      setRawCode("");
+      setRawCurrentStock("0");
+      setRawMinStock("5");
+      setRawUnitCost("0");
+      setRawCostCenterId("");
+      setRawChartOfAccountId("");
+      setRawSupplierId("");
       router.refresh();
     } catch (err: any) {
       alert(err.message);
@@ -254,6 +288,8 @@ export function EstoqueClientView({
           currentStock: parseInt(packCurrentStock, 10) || 0,
           minStock: parseInt(packMinStock, 10) || 0,
           unitCost: parseFloat(packUnitCost) || 0,
+          costCenterId: packCostCenterId || null,
+          chartOfAccountId: packChartOfAccountId || null,
           supplierId: packSupplierId || null,
         }),
       });
@@ -263,11 +299,79 @@ export function EstoqueClientView({
 
       setPackagings((prev) => [...prev, data.item].sort((a, b) => a.name.localeCompare(b.name)));
       setShowPackModal(false);
+      // Limpa campos
+      setPackName("");
+      setPackCode("");
+      setPackCurrentStock("0");
+      setPackMinStock("20");
+      setPackUnitCost("0");
+      setPackCostCenterId("");
+      setPackChartOfAccountId("");
+      setPackSupplierId("");
       router.refresh();
     } catch (err: any) {
       alert(err.message);
     } finally {
       setSavingPack(false);
+    }
+  };
+
+  const handleOpenEdit = (item: any, type: "MATERIA_PRIMA" | "EMBALAGEM") => {
+    setEditingItem(item);
+    setEditingItemType(type);
+    setEditName(item.name || "");
+    setEditCode(item.code || "");
+    setEditCategory(item.category || (type === "MATERIA_PRIMA" ? "CERA" : "EMBALAGEM"));
+    setEditUnit(item.unit || "UN");
+    setEditMinStock(String(item.minStock || 0));
+    setEditUnitCost(String(item.unitCost || 0));
+    setEditCostCenterId(item.costCenterId || "");
+    setEditChartOfAccountId(item.chartOfAccountId || "");
+    setEditSupplierId(item.supplierId || "");
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem) return;
+    setSavingEdit(true);
+    try {
+      const res = await fetch("/api/estoque", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: editingItem.id,
+          itemType: editingItemType,
+          name: editName,
+          code: editCode,
+          category: editCategory,
+          unit: editUnit,
+          minStock: parseFloat(editMinStock) || 0,
+          unitCost: parseFloat(editUnitCost) || 0,
+          costCenterId: editCostCenterId || null,
+          chartOfAccountId: editChartOfAccountId || null,
+          supplierId: editSupplierId || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao atualizar item");
+
+      if (editingItemType === "MATERIA_PRIMA") {
+        setRawMaterials((prev) =>
+          prev.map((m) => (m.id === editingItem.id ? data.item : m)).sort((a, b) => a.name.localeCompare(b.name))
+        );
+      } else {
+        setPackagings((prev) =>
+          prev.map((p) => (p.id === editingItem.id ? data.item : p)).sort((a, b) => a.name.localeCompare(b.name))
+        );
+      }
+
+      setEditingItem(null);
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSavingEdit(false);
     }
   };
 

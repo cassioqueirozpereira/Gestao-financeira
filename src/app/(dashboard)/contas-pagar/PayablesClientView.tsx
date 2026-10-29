@@ -18,6 +18,7 @@ import {
   CreditCard,
   Building2,
   Clock,
+  RotateCcw,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -167,6 +168,45 @@ export function PayablesClientView({
       alert(err.message);
     } finally {
       setParcelLoading(false);
+    }
+  };
+
+  const handleRevertPayment = async (p: any) => {
+    const val = formatBRL(Number(p.paidAmount || p.originalAmount));
+    if (
+      !confirm(
+        `Deseja realmente ESTORNAR a baixa da conta "${p.description}" no valor de ${val}? O status voltará para EM ABERTO e o saldo da conta bancária será recomposto.`
+      )
+    ) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/contas-pagar", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: p.id,
+          action: "revert",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erro ao estornar baixa");
+
+      setFeedback(`Baixa da conta "${p.description}" estornada com sucesso.`);
+      setPayables((prev) =>
+        prev.map((item) =>
+          item.id === p.id
+            ? { ...item, status: "EM_ABERTO", paidAmount: null, paidAt: null, bankAccountId: null }
+            : item
+        )
+      );
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -695,7 +735,7 @@ export function PayablesClientView({
                       </td>
 
                       <td className="px-4 py-3.5 text-right space-x-2">
-                        {!isPaid && (
+                        {!isPaid ? (
                           <>
                             <button
                               onClick={() => handleOpenSettle(p)}
@@ -718,6 +758,15 @@ export function PayablesClientView({
                               <span>Parcelar</span>
                             </button>
                           </>
+                        ) : (
+                          <button
+                            onClick={() => handleRevertPayment(p)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 transition"
+                            title="Estornar baixa de pagamento e reverter saldo bancário"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span>Estornar</span>
+                          </button>
                         )}
                         <button
                           onClick={() => handleOpenEdit(p)}

@@ -6,13 +6,13 @@ import { EstoqueClientView } from "./EstoqueClientView";
 export const dynamic = "force-dynamic";
 
 export default async function EstoquePage() {
-  const [rawRes, packRes, prodRes, movRes, suppRes] = await Promise.allSettled([
+  const [rawRes, packRes, prodRes, movRes, suppRes, ccRes, accRes] = await Promise.allSettled([
     db.rawMaterial.findMany({
-      include: { supplier: true },
+      include: { supplier: true, costCenter: true, chartOfAccount: true },
       orderBy: { name: "asc" },
     }),
     db.packaging.findMany({
-      include: { supplier: true },
+      include: { supplier: true, costCenter: true, chartOfAccount: true },
       orderBy: { name: "asc" },
     }),
     db.product.findMany({
@@ -27,6 +27,13 @@ export default async function EstoquePage() {
       where: { isActive: true },
       orderBy: { name: "asc" },
     }),
+    db.costCenter.findMany({
+      orderBy: { name: "asc" },
+    }),
+    db.chartOfAccount.findMany({
+      where: { isActive: true },
+      orderBy: { code: "asc" },
+    }),
   ]);
 
   const rawMaterials = rawRes.status === "fulfilled" ? rawRes.value : [];
@@ -34,6 +41,8 @@ export default async function EstoquePage() {
   const products = prodRes.status === "fulfilled" ? prodRes.value : [];
   const movements = movRes.status === "fulfilled" ? movRes.value : [];
   const suppliers = suppRes.status === "fulfilled" ? suppRes.value : [];
+  const costCenters = ccRes.status === "fulfilled" ? ccRes.value : [];
+  const chartOfAccounts = accRes.status === "fulfilled" ? accRes.value : [];
 
   // Serializa Decimals e Dates
   const serializedRaw = rawMaterials.map((m) => ({
@@ -90,6 +99,8 @@ export default async function EstoquePage() {
         initialProducts={serializedProd}
         initialMovements={serializedMovements}
         suppliers={suppliers}
+        costCenters={costCenters}
+        chartOfAccounts={chartOfAccounts}
       />
     </div>
   );
