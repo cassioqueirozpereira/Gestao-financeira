@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
-import { db } from "@/lib/db";
 import {
   DEFAULT_CATALOG_SECTIONS,
   getStoredCatalogSections,
@@ -13,22 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const fileSections = getStoredCatalogSections();
-    let dbCategories: any[] = [];
-    try {
-      dbCategories = await db.category.findMany({
-        where: { isActive: true },
-        orderBy: { name: "asc" },
-      });
-    } catch (e) {
-      console.warn("db.category query failed:", e);
-    }
-
     const mergedSections: Record<string, string> = { ...DEFAULT_CATALOG_SECTIONS, ...fileSections };
-    for (const cat of dbCategories) {
-      const k = cat.code || cat.name;
-      mergedSections[k] = cat.name;
-    }
-
     return NextResponse.json({ sections: mergedSections });
   } catch (error: any) {
     return NextResponse.json({ sections: getStoredCatalogSections() });
@@ -48,17 +32,6 @@ export async function POST(req: NextRequest) {
     // Se ação de sincronização em lote
     if (action === "sync" && updatedSections && typeof updatedSections === "object") {
       saveStoredCatalogSections(updatedSections);
-      for (const [k, lbl] of Object.entries(updatedSections)) {
-        if (typeof lbl === "string" && lbl.trim()) {
-          try {
-            await db.category.upsert({
-              where: { code: k },
-              update: { name: lbl.trim(), isActive: true },
-              create: { code: k, name: lbl.trim(), isActive: true },
-            });
-          } catch {}
-        }
-      }
       return NextResponse.json({ success: true, sections: updatedSections });
     }
 
@@ -81,36 +54,6 @@ export async function POST(req: NextRequest) {
       finalKey = `SECTION_${slug}_${Date.now().toString().slice(-4)}`;
     }
 
-    // 1. Salva no banco de dados PostgreSQL (Category)
-    try {
-      const existingByCode = await db.category.findUnique({ where: { code: finalKey } });
-      if (existingByCode) {
-        await db.category.update({
-          where: { id: existingByCode.id },
-          data: { name: trimmedLabel, isActive: true },
-        });
-      } else {
-        const existingByName = await db.category.findUnique({ where: { name: trimmedLabel } });
-        if (existingByName) {
-          await db.category.update({
-            where: { id: existingByName.id },
-            data: { code: finalKey, isActive: true },
-          });
-        } else {
-          await db.category.create({
-            data: {
-              code: finalKey,
-              name: trimmedLabel,
-              isActive: true,
-            },
-          });
-        }
-      }
-    } catch (dbErr) {
-      console.warn("Aviso ao persistir seção no banco de dados:", dbErr);
-    }
-
-    // 2. Salva no arquivo JSON para redundância
     currentSections[finalKey] = trimmedLabel;
     saveStoredCatalogSections(currentSections);
 
@@ -145,16 +88,6 @@ export async function DELETE(req: NextRequest) {
 
     if (!key) {
       return NextResponse.json({ error: "Chave da seção não informada" }, { status: 400 });
-    }
-
-    // Desativa no banco de dados
-    try {
-      await db.category.updateMany({
-        where: { OR: [{ code: key }, { name: key }] },
-        data: { isActive: false },
-      });
-    } catch (dbErr) {
-      console.warn("Aviso ao desativar categoria no banco:", dbErr);
     }
 
     const currentSections = getStoredCatalogSections();

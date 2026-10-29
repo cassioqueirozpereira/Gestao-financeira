@@ -16,7 +16,6 @@ export default async function EstoquePage() {
       orderBy: { name: "asc" },
     }),
     db.product.findMany({
-      include: { categoryRef: true },
       orderBy: { name: "asc" },
     }),
     db.stockMovement.findMany({

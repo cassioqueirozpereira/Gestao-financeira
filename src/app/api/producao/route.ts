@@ -9,9 +9,7 @@ export async function GET() {
   try {
     const orders = await db.productionOrder.findMany({
       include: {
-        product: {
-          include: { categoryRef: true },
-        },
+        product: true,
         ingredientConsumptions: {
           include: { rawMaterial: true },
         },

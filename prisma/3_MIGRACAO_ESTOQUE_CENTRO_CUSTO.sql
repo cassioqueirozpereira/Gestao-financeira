@@ -13,7 +13,10 @@ ALTER TABLE "raw_materials" ADD COLUMN IF NOT EXISTS "chartOfAccountId" TEXT REF
 ALTER TABLE "packagings" ADD COLUMN IF NOT EXISTS "costCenterId" TEXT REFERENCES "cost_centers"("id") ON DELETE SET NULL;
 ALTER TABLE "packagings" ADD COLUMN IF NOT EXISTS "chartOfAccountId" TEXT REFERENCES "chart_of_accounts"("id") ON DELETE SET NULL;
 
--- 3. Índices para performance
+-- 3. Produtos e Catálogo (Permite que qualquer nova seção visual criada seja aceita diretamente na coluna category sem restrição de ENUM)
+ALTER TABLE "products" ALTER COLUMN "category" TYPE TEXT;
+
+-- 4. Índices para performance
 CREATE INDEX IF NOT EXISTS "idx_raw_materials_cost_center" ON "raw_materials"("costCenterId");
 CREATE INDEX IF NOT EXISTS "idx_raw_materials_chart_account" ON "raw_materials"("chartOfAccountId");
 CREATE INDEX IF NOT EXISTS "idx_packagings_cost_center" ON "packagings"("costCenterId");

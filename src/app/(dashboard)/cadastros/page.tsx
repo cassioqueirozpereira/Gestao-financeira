@@ -1,7 +1,7 @@
 import React from "react";
 import Link from "next/link";
 import {
-  FolderTree,
+  Package,
   Truck,
   ListTree,
   Coins,
@@ -16,20 +16,20 @@ export const dynamic = "force-dynamic";
 
 export default async function CadastrosHubPage() {
   const [
-    catCountRes,
+    prodCountRes,
     suppCountRes,
     accCountRes,
     rawCountRes,
     packCountRes,
   ] = await Promise.allSettled([
-    db.category.count(),
+    db.product.count(),
     db.supplier.count(),
     db.chartOfAccount.count(),
     db.rawMaterial.count(),
     db.packaging.count(),
   ]);
 
-  const categoriesCount = catCountRes.status === "fulfilled" ? catCountRes.value : 0;
+  const productsCount = prodCountRes.status === "fulfilled" ? prodCountRes.value : 0;
   const suppliersCount = suppCountRes.status === "fulfilled" ? suppCountRes.value : 0;
   const accountsCount = accCountRes.status === "fulfilled" ? accCountRes.value : 0;
   const rawMaterialsCount = rawCountRes.status === "fulfilled" ? rawCountRes.value : 0;
@@ -37,20 +37,20 @@ export default async function CadastrosHubPage() {
 
   const sections = [
     {
+      title: "Produtos e Catálogo",
+      description: "Modelos oficiais, calculadora de custos, precificação, margem de lucro e organização por seções visuais.",
+      href: "/catalogo",
+      icon: Package,
+      color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-900",
+      stats: `${productsCount} produtos cadastrados`,
+    },
+    {
       title: "Fornecedores",
       description: "Cadastro centralizado de fornecedores de matéria-prima, embalagens, equipamentos e prestadores de serviços.",
       href: "/cadastros/fornecedores",
       icon: Truck,
       color: "text-blue-600 bg-blue-50 dark:bg-blue-950/50 border-blue-200 dark:border-blue-900",
       stats: `${suppliersCount} fornecedores cadastrados`,
-    },
-    {
-      title: "Categorias Oficiais",
-      description: "Categorias padronizadas de produtos para organização do catálogo, relatórios de vendas e controle de estoque.",
-      href: "/cadastros/categorias",
-      icon: FolderTree,
-      color: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50 border-indigo-200 dark:border-indigo-900",
-      stats: `${categoriesCount} categorias oficiais`,
     },
     {
       title: "Plano de Contas",

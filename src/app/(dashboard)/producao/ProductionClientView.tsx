@@ -512,7 +512,7 @@ export function ProductionClientView({
                             <option value="">Selecione o produto...</option>
                             {products.map((p) => (
                               <option key={p.id} value={p.id}>
-                                {p.name} {p.categoryRef ? `[${p.categoryRef.name}]` : ""} (Estoque atual: {p.stockQuantity} un)
+                                {p.name} [{p.category}] (Estoque atual: {p.stockQuantity} un)
                               </option>
                             ))}
                           </select>

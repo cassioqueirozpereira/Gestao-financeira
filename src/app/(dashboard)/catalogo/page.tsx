@@ -7,20 +7,14 @@ import { getStoredCatalogSections } from "@/lib/catalog-sections";
 export const dynamic = "force-dynamic";
 
 export default async function CatalogPage() {
-  const [productsRes, categoriesRes] = await Promise.allSettled([
-    db.product.findMany({
-      include: {
-        categoryRef: true,
-      },
+  let products: any[] = [];
+  try {
+    products = await db.product.findMany({
       orderBy: [{ category: "asc" }, { basePrice: "asc" }],
-    }),
-    db.category.findMany({
-      orderBy: { name: "asc" },
-    }),
-  ]);
-
-  const products = productsRes.status === "fulfilled" ? productsRes.value : [];
-  const officialCategories = categoriesRes.status === "fulfilled" ? categoriesRes.value : [];
+    });
+  } catch (error) {
+    console.error("Erro ao carregar produtos:", error);
+  }
 
   // Serializa datas
   const serializedProducts = products.map((p) => ({
@@ -29,20 +23,13 @@ export default async function CatalogPage() {
     updatedAt: p.updatedAt.toISOString(),
   }));
 
-  const serializedCategories = officialCategories.map((c) => ({
-    ...c,
-    createdAt: c.createdAt.toISOString(),
-    updatedAt: c.updatedAt.toISOString(),
-  }));
-
   const storedSections = getStoredCatalogSections();
   const categoryLabels: Record<string, string> = { ...storedSections };
 
-  // Mescla categorias salvas no PostgreSQL para garantir persistência total mesmo após F5 ou em ambientes serverless
-  officialCategories.forEach((cat) => {
-    if (cat.isActive !== false) {
-      const k = cat.code || cat.name;
-      categoryLabels[k] = cat.name;
+  // Garante que qualquer categoria já cadastrada em produtos permaneça visível no catálogo
+  products.forEach((p) => {
+    if (p.category && !categoryLabels[p.category]) {
+      categoryLabels[p.category] = p.category;
     }
   });
 
@@ -76,7 +63,6 @@ export default async function CatalogPage() {
       <CatalogClientView
         initialProducts={serializedProducts}
         categoryLabels={categoryLabels}
-        officialCategories={serializedCategories}
       />
     </div>
   );

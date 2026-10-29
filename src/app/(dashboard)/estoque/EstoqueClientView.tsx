@@ -751,7 +751,7 @@ export function EstoqueClientView({
                       <tr key={prod.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                         <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">{prod.name}</td>
                         <td className="px-6 py-4 text-xs text-slate-500">
-                          {prod.categoryRef ? prod.categoryRef.name : prod.category}
+                          {prod.category}
                         </td>
                         <td className="px-6 py-4 text-right font-mono text-slate-500">
                           {formatBRL(Number(prod.calculatedCost))}

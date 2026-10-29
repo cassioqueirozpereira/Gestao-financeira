@@ -35,19 +35,6 @@ ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "tradeName" TEXT;
 ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "notes" TEXT;
 ALTER TABLE "suppliers" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN DEFAULT TRUE;
 
--- 9. Categorias Oficiais (Categories)
-CREATE TABLE IF NOT EXISTS "categories" (
-  "id" TEXT PRIMARY KEY,
-  "code" TEXT UNIQUE,
-  "name" TEXT UNIQUE NOT NULL,
-  "description" TEXT,
-  "isActive" BOOLEAN DEFAULT TRUE,
-  "createdAt" TIMESTAMPTZ DEFAULT NOW(),
-  "updatedAt" TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE "products" ADD COLUMN IF NOT EXISTS "categoryId" TEXT REFERENCES "categories"("id") ON DELETE SET NULL;
-
 -- 10. Matérias-Primas (Raw Materials)
 ALTER TABLE "raw_materials" ADD COLUMN IF NOT EXISTS "code" TEXT UNIQUE;
 ALTER TABLE "raw_materials" ADD COLUMN IF NOT EXISTS "supplierId" TEXT REFERENCES "suppliers"("id") ON DELETE SET NULL;

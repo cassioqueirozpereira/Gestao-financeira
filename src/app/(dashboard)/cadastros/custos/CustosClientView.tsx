@@ -201,13 +201,9 @@ export function CustosClientView({
                           {prod.name}
                         </td>
                         <td className="px-6 py-4">
-                          {prod.categoryRef ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/40">
-                              {prod.categoryRef.name}
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs italic">{prod.category}</span>
-                          )}
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-900/40">
+                            {prod.category}
+                          </span>
                         </td>
                         <td className="px-6 py-4 text-right font-mono font-medium text-slate-500">
                           {formatBRL(cost)}

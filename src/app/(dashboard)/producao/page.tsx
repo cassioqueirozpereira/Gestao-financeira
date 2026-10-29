@@ -14,9 +14,7 @@ export default async function ProductionPage() {
   ] = await Promise.allSettled([
     db.productionOrder.findMany({
       include: {
-        product: {
-          include: { categoryRef: true },
-        },
+        product: true,
         ingredientConsumptions: {
           include: { rawMaterial: true },
         },
@@ -27,7 +25,6 @@ export default async function ProductionPage() {
       orderBy: { productionDate: "desc" },
     }),
     db.product.findMany({
-      include: { categoryRef: true },
       orderBy: { name: "asc" },
     }),
     db.rawMaterial.findMany({

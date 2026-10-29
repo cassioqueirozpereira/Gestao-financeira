@@ -654,37 +654,10 @@ model PerformanceGoal {
 // CATÁLOGO, ESTOQUE E PRODUÇÃO D.A. COM CARINHO
 // ----------------------------------------------------
 
-model Category {
-  id          String    @id @default(uuid())
-  code        String?   @unique
-  name        String    @unique
-  description String?
-  isActive    Boolean   @default(true)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-
-  products    Product[]
-
-  @@map("categories")
-}
-
-enum ProductCategory {
-  VELAS_NORMAIS_COLORIDAS
-  VELAS_DECORADAS_FLORES
-  CHANTILLY_E_FLOR
-  VASOS_DECORATIVOS
-  COLECAO_NATAL
-  ARVORES_NATAL_AVULSAS
-  ARVORES_NATAL_COPO
-  RESINAS_DIVERSAS
-}
-
 model Product {
   id              String          @id @default(uuid())
   name            String
-  category        ProductCategory
-  categoryId      String?
-  categoryRef     Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  category        String          @default("VELAS_NORMAIS_COLORIDAS")
   weightGrams     Int?
   volumeMl        Int?
   basePrice       Decimal

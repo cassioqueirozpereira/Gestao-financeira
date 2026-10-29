@@ -1,8 +1,6 @@
-import { ProductCategory } from "@prisma/client";
-
 export interface CatalogItemSeed {
   name: string;
-  category: ProductCategory;
+  category: string;
   weightGrams?: number;
   volumeMl?: number;
   basePrice: number;

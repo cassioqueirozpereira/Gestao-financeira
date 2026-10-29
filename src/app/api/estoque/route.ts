@@ -38,7 +38,6 @@ export async function GET(req: NextRequest) {
 
     const [products, costCenters, chartOfAccounts] = await Promise.all([
       db.product.findMany({
-        include: { categoryRef: true },
         orderBy: { name: "asc" },
       }),
       db.costCenter.findMany({

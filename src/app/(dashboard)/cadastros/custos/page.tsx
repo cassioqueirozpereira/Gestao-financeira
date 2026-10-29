@@ -16,7 +16,6 @@ export default async function CustosPage() {
       orderBy: { name: "asc" },
     }),
     db.product.findMany({
-      include: { categoryRef: true },
       orderBy: { name: "asc" },
     }),
   ]);

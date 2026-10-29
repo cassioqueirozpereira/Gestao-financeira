@@ -18,7 +18,6 @@ export async function GET() {
     });
 
     const products = await db.product.findMany({
-      include: { categoryRef: true },
       orderBy: { name: "asc" },
     });
 

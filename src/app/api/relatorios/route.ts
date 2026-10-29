@@ -56,7 +56,6 @@ export async function GET(req: NextRequest) {
       orderBy: { name: "asc" },
     });
     const products = await db.product.findMany({
-      include: { categoryRef: true },
       orderBy: { name: "asc" },
     });
 
