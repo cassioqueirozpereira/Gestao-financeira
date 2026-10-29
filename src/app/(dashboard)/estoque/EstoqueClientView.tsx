@@ -551,7 +551,19 @@ export function EstoqueClientView({
                       <tr key={mat.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
                         <td className="px-6 py-4">
                           <div className="font-semibold text-slate-900 dark:text-white">{mat.name}</div>
-                          {mat.code && <span className="text-[10px] font-mono text-slate-400">Cód: {mat.code}</span>}
+                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                            {mat.code && <span className="text-[10px] font-mono text-slate-400">Cód: {mat.code}</span>}
+                            {mat.costCenter && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                                {mat.costCenter.name}
+                              </span>
+                            )}
+                            {mat.chartOfAccount && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                                {mat.chartOfAccount.name}
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 text-xs text-slate-500">
                           {mat.supplier ? mat.supplier.name : <span className="italic text-slate-400">-</span>}
@@ -571,6 +583,13 @@ export function EstoqueClientView({
                         </td>
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => handleOpenEdit(mat, "MATERIA_PRIMA")}
+                              title="Editar Insumo (Dados, Centro de Custo e Categoria)"
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
                             <button
                               onClick={() => handleOpenMovement(mat, "MATERIA_PRIMA", "ENTRADA")}
                               title="Adicionar Entrada Manual"
@@ -634,9 +653,21 @@ export function EstoqueClientView({
                       const isLow = pack.currentStock <= pack.minStock;
                       return (
                         <tr key={pack.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                          <td className="px-6 py-4 font-semibold text-slate-900 dark:text-white">
-                            {pack.name}
-                            {pack.code && <span className="block text-[10px] font-mono text-slate-400">Cód: {pack.code}</span>}
+                          <td className="px-6 py-4">
+                            <div className="font-semibold text-slate-900 dark:text-white">{pack.name}</div>
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              {pack.code && <span className="text-[10px] font-mono text-slate-400">Cód: {pack.code}</span>}
+                              {pack.costCenter && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                                  {pack.costCenter.name}
+                                </span>
+                              )}
+                              {pack.chartOfAccount && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
+                                  {pack.chartOfAccount.name}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 text-xs text-slate-500">
                             {pack.supplier ? pack.supplier.name : <span className="italic text-slate-400">-</span>}
@@ -654,6 +685,13 @@ export function EstoqueClientView({
                           </td>
                           <td className="px-6 py-4 text-right">
                             <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenEdit(pack, "EMBALAGEM")}
+                                title="Editar Embalagem (Dados, Centro de Custo e Categoria)"
+                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg transition"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={() => handleOpenMovement(pack, "EMBALAGEM", "ENTRADA")}
                                 title="Entrada de Embalagens"
@@ -1177,6 +1215,46 @@ export function EstoqueClientView({
                 </select>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Centro de Custo Padrão
+                  </label>
+                  <select
+                    value={rawCostCenterId}
+                    onChange={(e) => setRawCostCenterId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  >
+                    <option value="">Selecione o centro de custo...</option>
+                    {costCenters.map((cc) => (
+                      <option key={cc.id} value={cc.id}>
+                        {cc.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Categoria / Plano de Contas
+                  </label>
+                  <select
+                    value={rawChartOfAccountId}
+                    onChange={(e) => setRawChartOfAccountId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  >
+                    <option value="">Selecione a categoria...</option>
+                    {chartOfAccounts.map((ca) => (
+                      <option key={ca.id} value={ca.id}>
+                        {ca.code ? `[${ca.code}] ` : ""}{ca.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                💡 Ao efetuar a compra em Compras e Suprimentos, o título no Contas a Pagar herdará automaticamente este centro de custo e categoria.
+              </p>
+
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
@@ -1311,6 +1389,46 @@ export function EstoqueClientView({
                 </select>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Centro de Custo Padrão
+                  </label>
+                  <select
+                    value={packCostCenterId}
+                    onChange={(e) => setPackCostCenterId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  >
+                    <option value="">Selecione o centro de custo...</option>
+                    {costCenters.map((cc) => (
+                      <option key={cc.id} value={cc.id}>
+                        {cc.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Categoria / Plano de Contas
+                  </label>
+                  <select
+                    value={packChartOfAccountId}
+                    onChange={(e) => setPackChartOfAccountId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  >
+                    <option value="">Selecione a categoria...</option>
+                    {chartOfAccounts.map((ca) => (
+                      <option key={ca.id} value={ca.id}>
+                        {ca.code ? `[${ca.code}] ` : ""}{ca.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                💡 Ao efetuar a compra em Compras e Suprimentos, o título no Contas a Pagar herdará automaticamente este centro de custo e categoria.
+              </p>
+
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
                 <button
                   type="button"
@@ -1325,6 +1443,179 @@ export function EstoqueClientView({
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-md"
                 >
                   {savingPack ? "Salvando..." : "Salvar Embalagem"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal - Editar Item de Estoque (Matéria-Prima ou Embalagem) */}
+      {editingItem && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 relative max-h-[92vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block">
+                  Editar {editingItemType === "MATERIA_PRIMA" ? "Matéria-Prima" : "Embalagem"}
+                </span>
+                <h3 className="font-bold text-slate-900 dark:text-white text-base">
+                  {editingItem.name}
+                </h3>
+              </div>
+              <button
+                onClick={() => setEditingItem(null)}
+                className="text-slate-400 hover:text-white p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Nome do Item *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Código Interno
+                  </label>
+                  <input
+                    type="text"
+                    value={editCode}
+                    onChange={(e) => setEditCode(e.target.value.toUpperCase())}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-mono uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Unidade
+                  </label>
+                  <select
+                    value={editUnit}
+                    onChange={(e) => setEditUnit(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  >
+                    <option value="UN">Unidade (un)</option>
+                    <option value="KG">Quilo (kg)</option>
+                    <option value="G">Grama (g)</option>
+                    <option value="L">Litro (L)</option>
+                    <option value="ML">Mililitro (ml)</option>
+                    <option value="CX">Caixa (cx)</option>
+                    <option value="PCT">Pacote (pct)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Estoque Mínimo
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={editMinStock}
+                    onChange={(e) => setEditMinStock(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Custo Unitário (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editUnitCost}
+                    onChange={(e) => setEditUnitCost(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                  Fornecedor Preferencial
+                </label>
+                <select
+                  value={editSupplierId}
+                  onChange={(e) => setEditSupplierId(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                >
+                  <option value="">Selecione o fornecedor (opcional)...</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Centro de Custo Padrão
+                  </label>
+                  <select
+                    value={editCostCenterId}
+                    onChange={(e) => setEditCostCenterId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  >
+                    <option value="">Selecione o centro de custo...</option>
+                    {costCenters.map((cc) => (
+                      <option key={cc.id} value={cc.id}>
+                        {cc.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Categoria / Plano de Contas
+                  </label>
+                  <select
+                    value={editChartOfAccountId}
+                    onChange={(e) => setEditChartOfAccountId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
+                  >
+                    <option value="">Selecione a categoria...</option>
+                    {chartOfAccounts.map((ca) => (
+                      <option key={ca.id} value={ca.id}>
+                        {ca.code ? `[${ca.code}] ` : ""}{ca.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                💡 O centro de custo e a categoria definidos aqui serão preenchidos automaticamente nas compras em Compras e Suprimentos e no Contas a Pagar.
+              </p>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md"
+                >
+                  {savingEdit ? "Salvando..." : "Salvar Alterações"}
                 </button>
               </div>
             </form>

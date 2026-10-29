@@ -108,6 +108,10 @@ export function ComprasClientView({
           unitCost: Number(defaultRaw.unitCost || 0),
         },
       ]);
+      if (items.length === 0) {
+        if (defaultRaw.costCenterId) setCostCenterId(defaultRaw.costCenterId);
+        if (defaultRaw.chartOfAccountId) setChartOfAccountId(defaultRaw.chartOfAccountId);
+      }
     } else if (packagings[0]) {
       const defaultPack = packagings[0];
       setItems((prev) => [
@@ -121,6 +125,10 @@ export function ComprasClientView({
           unitCost: Number(defaultPack.unitCost || 0),
         },
       ]);
+      if (items.length === 0) {
+        if (defaultPack.costCenterId) setCostCenterId(defaultPack.costCenterId);
+        if (defaultPack.chartOfAccountId) setChartOfAccountId(defaultPack.chartOfAccountId);
+      }
     }
   };
 
@@ -143,6 +151,8 @@ export function ComprasClientView({
             item.name = first.name;
             item.unit = first.unit;
             item.unitCost = Number(first.unitCost);
+            if (first.costCenterId) setCostCenterId(first.costCenterId);
+            if (first.chartOfAccountId) setChartOfAccountId(first.chartOfAccountId);
           }
         } else {
           const first = packagings[0];
@@ -151,6 +161,8 @@ export function ComprasClientView({
             item.name = first.name;
             item.unit = first.unit;
             item.unitCost = Number(first.unitCost);
+            if (first.costCenterId) setCostCenterId(first.costCenterId);
+            if (first.chartOfAccountId) setChartOfAccountId(first.chartOfAccountId);
           }
         }
       } else if (field === "itemId") {
@@ -161,6 +173,8 @@ export function ComprasClientView({
             item.name = found.name;
             item.unit = found.unit;
             item.unitCost = Number(found.unitCost);
+            if (found.costCenterId) setCostCenterId(found.costCenterId);
+            if (found.chartOfAccountId) setChartOfAccountId(found.chartOfAccountId);
           }
         } else {
           const found = packagings.find((p) => p.id === value);
@@ -168,6 +182,8 @@ export function ComprasClientView({
             item.name = found.name;
             item.unit = found.unit;
             item.unitCost = Number(found.unitCost);
+            if (found.costCenterId) setCostCenterId(found.costCenterId);
+            if (found.chartOfAccountId) setChartOfAccountId(found.chartOfAccountId);
           }
         }
       } else {

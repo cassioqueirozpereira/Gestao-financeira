@@ -2,7 +2,7 @@ import React from "react";
 import { db } from "@/lib/db";
 import { ShoppingBag, Lock, Info } from "lucide-react";
 import { CatalogClientView } from "./CatalogClientView";
-import { getStoredCatalogSections } from "@/app/api/catalogo/secoes/route";
+import { getStoredCatalogSections } from "@/lib/catalog-sections";
 
 export const dynamic = "force-dynamic";
 
