@@ -40,8 +40,25 @@ export function CatalogClientView({
       const stored = localStorage.getItem("da_catalog_visual_sections");
       if (stored) {
         const parsed = JSON.parse(stored);
+        const cleaned: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (!k.startsWith("SECTION_")) {
+            cleaned[k] = String(v);
+          } else if (v && typeof v === "string") {
+            cleaned[v] = v;
+          }
+        }
+        try {
+          localStorage.setItem("da_catalog_visual_sections", JSON.stringify(cleaned));
+        } catch {}
         setVisualSections((prev) => {
-          const merged = { ...prev, ...parsed };
+          const merged = { ...prev, ...cleaned };
+          // Remove chaves SECTION_ do estado
+          for (const key of Object.keys(merged)) {
+            if (key.startsWith("SECTION_")) {
+              delete merged[key];
+            }
+          }
           return merged;
         });
       }
@@ -425,7 +442,11 @@ export function CatalogClientView({
           <div key={category} className="space-y-3">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
               <Flame className="w-4 h-4 text-indigo-500" />
-              {visualSections[category] || categoryLabels[category] || category}
+              {visualSections[category] ||
+                categoryLabels[category] ||
+                (category.startsWith("SECTION_")
+                  ? category.replace(/^SECTION_/, "").replace(/_\d+$/, "").replace(/_/g, " ")
+                  : category)}
               <span className="text-xs font-normal text-slate-400">({items.length} itens)</span>
             </h2>
 
@@ -477,7 +498,7 @@ export function CatalogClientView({
                         className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition shadow-sm"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
-                        <span>Editar & Margem</span>
+                        <span>Editar</span>
                       </button>
                       <button
                         onClick={() => handleDeleteProduct(item)}

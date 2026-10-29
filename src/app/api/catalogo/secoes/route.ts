@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
+import { db } from "@/lib/db";
 import {
   DEFAULT_CATALOG_SECTIONS,
   getStoredCatalogSections,
@@ -13,6 +14,15 @@ export async function GET() {
   try {
     const fileSections = getStoredCatalogSections();
     const mergedSections: Record<string, string> = { ...DEFAULT_CATALOG_SECTIONS, ...fileSections };
+
+    // Limpa chaves antigas com prefixo SECTION_
+    for (const [k, v] of Object.entries(mergedSections)) {
+      if (k.startsWith("SECTION_")) {
+        delete mergedSections[k];
+        mergedSections[v] = v;
+      }
+    }
+
     return NextResponse.json({ sections: mergedSections });
   } catch (error: any) {
     return NextResponse.json({ sections: getStoredCatalogSections() });
@@ -41,17 +51,28 @@ export async function POST(req: NextRequest) {
     }
 
     const trimmedLabel = label.trim();
-    let finalKey = key;
+    // A chave agora é SEMPRE o próprio nome exato criado pelo usuário (sem prefixo SECTION_)
+    const finalKey = trimmedLabel;
 
-    if (!finalKey) {
-      // Gera uma chave amigável normalizada
-      const slug = trimmedLabel
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-zA-Z0-9]/g, "_")
-        .toUpperCase()
-        .slice(0, 30);
-      finalKey = `SECTION_${slug}_${Date.now().toString().slice(-4)}`;
+    // Se estiver editando e a chave anterior for diferente (ou chave antiga com SECTION_)
+    if (key && key !== finalKey) {
+      try {
+        await db.product.updateMany({
+          where: { category: key },
+          data: { category: finalKey },
+        });
+      } catch (e) {
+        console.warn("Aviso ao atualizar produtos para novo nome:", e);
+      }
+      delete currentSections[key];
+    }
+
+    // Limpa quaisquer chaves residuais com prefixo SECTION_ do dicionário
+    for (const [k, v] of Object.entries(currentSections)) {
+      if (k.startsWith("SECTION_")) {
+        delete currentSections[k];
+        currentSections[v] = v;
+      }
     }
 
     currentSections[finalKey] = trimmedLabel;
@@ -92,6 +113,14 @@ export async function DELETE(req: NextRequest) {
 
     const currentSections = getStoredCatalogSections();
     delete currentSections[key];
+
+    // Remove também chaves com prefixo SECTION_ correspondentes se houver
+    for (const [k, v] of Object.entries(currentSections)) {
+      if (k === key || v === key) {
+        delete currentSections[k];
+      }
+    }
+
     saveStoredCatalogSections(currentSections);
 
     return NextResponse.json({ success: true, sections: currentSections });

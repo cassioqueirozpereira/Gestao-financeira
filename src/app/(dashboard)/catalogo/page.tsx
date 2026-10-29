@@ -16,6 +16,34 @@ export default async function CatalogPage() {
     console.error("Erro ao carregar produtos:", error);
   }
 
+  const storedSections = getStoredCatalogSections();
+
+  // Limpa e atualiza automaticamente no Supabase qualquer produto salvo anteriormente com prefixo SECTION_...
+  try {
+    const sectionProducts = products.filter((p) => p.category && p.category.startsWith("SECTION_"));
+    for (const sp of sectionProducts) {
+      const cleanName =
+        storedSections[sp.category] ||
+        sp.category
+          .replace(/^SECTION_/, "")
+          .replace(/_\d+$/, "")
+          .replace(/_/g, " ")
+          .trim();
+
+      if (cleanName && cleanName !== sp.category) {
+        await db.product.updateMany({
+          where: { category: sp.category },
+          data: { category: cleanName },
+        });
+        sp.category = cleanName;
+        storedSections[cleanName] = cleanName;
+        delete storedSections[sp.category];
+      }
+    }
+  } catch (cleanErr) {
+    console.warn("Aviso na limpeza de categorias com prefixo:", cleanErr);
+  }
+
   // Serializa datas
   const serializedProducts = products.map((p) => ({
     ...p,
@@ -23,8 +51,14 @@ export default async function CatalogPage() {
     updatedAt: p.updatedAt.toISOString(),
   }));
 
-  const storedSections = getStoredCatalogSections();
   const categoryLabels: Record<string, string> = { ...storedSections };
+
+  // Remove chaves técnicas antigas
+  for (const k of Object.keys(categoryLabels)) {
+    if (k.startsWith("SECTION_")) {
+      delete categoryLabels[k];
+    }
+  }
 
   // Garante que qualquer categoria já cadastrada em produtos permaneça visível no catálogo
   products.forEach((p) => {
