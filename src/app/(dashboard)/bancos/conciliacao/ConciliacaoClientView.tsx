@@ -222,7 +222,19 @@ export function ConciliacaoClientView({
           method: "POST",
           body: formData,
         });
-        const data = await res.json();
+
+        const rawResponse = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(rawResponse);
+        } catch {
+          throw new Error(
+            res.ok
+              ? "Resposta inválida recebida do servidor ao decodificar PDF."
+              : `Erro no servidor (${res.status}). Tente novamente em instantes.`
+          );
+        }
+
         if (!res.ok) throw new Error(data.error || "Erro ao ler extrato PDF");
 
         if (data.csvText) {

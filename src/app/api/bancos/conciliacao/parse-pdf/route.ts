@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { PDFParse } from "pdf-parse";
+import { extractText, getDocumentProxy } from "unpdf";
 import zlib from "zlib";
 
 export const dynamic = "force-dynamic";
@@ -49,24 +49,23 @@ function isBalanceOrHeader(desc: string): boolean {
 }
 
 /**
- * Extração de texto de PDF usando pdf-parse (com resolução completa de fontes Identity-H e CMaps).
+ * Extração de texto de PDF usando unpdf (compatível com Vercel Serverless e Edge, sem dependências nativas).
  */
-async function extractTextWithPdfParse(buffer: Buffer): Promise<string> {
+async function extractTextWithUnpdf(uint8Array: Uint8Array): Promise<string> {
   try {
-    const parser = new PDFParse({ data: buffer });
-    const result = await parser.getText();
-    await parser.destroy();
-    if (result && typeof result.text === "string" && result.text.trim().length > 0) {
-      return result.text;
+    const pdf = await getDocumentProxy(uint8Array);
+    const { text } = await extractText(pdf, { mergePages: true });
+    if (typeof text === "string" && text.trim().length > 0) {
+      return text;
     }
   } catch (err) {
-    console.warn("pdf-parse falhou ao extrair texto, tentando fallback bruto:", err);
+    console.warn("unpdf falhou ao extrair texto, tentando fallback bruto:", err);
   }
   return "";
 }
 
 /**
- * Fallback para extrair texto inspecionando streams FlateDecode se pdf-parse falhar.
+ * Fallback para extrair texto inspecionando streams FlateDecode se necessário.
  */
 function extractRawTextFromPDF(buffer: Buffer): string {
   const binary = buffer.toString("binary");
@@ -250,14 +249,14 @@ export async function POST(req: NextRequest) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const uint8Array = new Uint8Array(arrayBuffer);
 
-    // 1. Tenta extrair com pdf-parse (decodifica CMaps e fontes Identity-H de bancos como Itaú)
-    let text = await extractTextWithPdfParse(buffer);
+    // 1. Tenta extrair com unpdf (100% serverless / Vercel friendly, decodifica fontes Itaú)
+    let text = await extractTextWithUnpdf(uint8Array);
 
     // 2. Se falhar ou vier vazio, usa fallback do extractor de streams
     if (!text || text.trim().length === 0) {
-      text = extractRawTextFromPDF(buffer);
+      text = extractRawTextFromPDF(Buffer.from(arrayBuffer));
     }
 
     // 3. Processa e padroniza as transações
