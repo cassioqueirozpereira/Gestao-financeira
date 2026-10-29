@@ -18,8 +18,10 @@ import {
   Tag,
   FolderTree,
   Trash2,
+  Sparkles,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { FichaTecnicaModal } from "./FichaTecnicaModal";
 
 interface CatalogClientViewProps {
   initialProducts: any[];
@@ -33,6 +35,7 @@ export function CatalogClientView({
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
   const [visualSections, setVisualSections] = useState<Record<string, string>>(categoryLabels);
+  const [selectedProductForFicha, setSelectedProductForFicha] = useState<any | null>(null);
 
   // Sincroniza com localStorage no carregamento do cliente
   useEffect(() => {
@@ -492,14 +495,24 @@ export function CatalogClientView({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setSelectedProductForFicha(item)}
+                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-600 hover:text-white text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900/50 rounded-xl text-xs font-bold transition shadow-xs"
+                        title="Ficha Técnica com busca automática de compras, estoque e financeiro"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>Ficha Técnica</span>
+                      </button>
+
                       <button
                         onClick={() => handleOpenEdit(item)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-indigo-600 hover:text-white text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition shadow-sm"
+                        className="p-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition shadow-xs"
+                        title="Editar dados cadastrais"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
-                        <span>Editar</span>
                       </button>
+
                       <button
                         onClick={() => handleDeleteProduct(item)}
                         disabled={loading}
@@ -571,61 +584,36 @@ export function CatalogClientView({
                 </select>
               </div>
 
-              {/* Bloco da Calculadora Gasto por Item */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                <span className="font-bold text-slate-900 dark:text-white uppercase text-[10px] tracking-wider block">
-                  1. Custos Unitários Estimados por Item
-                </span>
+              {/* Integração Automática com Compras, Estoque e Financeiro */}
+              <div className="p-4 bg-gradient-to-br from-indigo-50/80 to-slate-50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200 dark:border-indigo-900/60 rounded-2xl space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="font-black text-indigo-900 dark:text-indigo-300 uppercase text-[10px] tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                      Ficha Técnica Integrada & Custo Real de Produção
+                    </span>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Busca automaticamente os valores pagos em Compras, Estoque e faturas do Financeiro.
+                    </p>
+                  </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                  <div>
-                    <label className="block text-[10px] text-slate-500 mb-0.5">Cera / Resina (R$)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costCeraResina}
-                      onChange={(e) => setCostCeraResina(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-500 mb-0.5">Pote / Frasco (R$)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costPoteFrasco}
-                      onChange={(e) => setCostPoteFrasco(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-500 mb-0.5">Pavio/Essência (R$)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costPavioEssencia}
-                      onChange={(e) => setCostPavioEssencia(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-slate-500 mb-0.5">Operacional & MO (R$)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={costMaoDeObraOperacional}
-                      onChange={(e) => setCostMaoDeObraOperacional(parseFloat(e.target.value) || 0)}
-                      className="w-full px-2 py-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg font-bold"
-                    />
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs">
-                  <span className="font-semibold text-slate-500">Custo Total de Produção por Peça:</span>
-                  <span className="font-extrabold text-amber-600 dark:text-amber-400">
-                    {formatBRL(totalCalculatedCost)}
+                  <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 px-2.5 py-1 bg-white dark:bg-slate-900 rounded-xl border border-indigo-200 dark:border-indigo-800 shrink-0">
+                    Custo Real: {formatBRL(editingProduct.calculatedCost || totalCalculatedCost)}
                   </span>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const currentEditing = editingProduct;
+                    setEditingProduct(null);
+                    setSelectedProductForFicha(currentEditing);
+                  }}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20"
+                >
+                  <Calculator className="w-4 h-4" />
+                  <span>Abrir Ficha Técnica Completa (Ingredientes, Horas & Canais)</span>
+                </button>
               </div>
 
               {/* Margem de Lucro Desejada e Preço Sugerido */}
@@ -1034,6 +1022,21 @@ export function CatalogClientView({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal - Ficha Técnica Integrada & Precificação Automática */}
+      {selectedProductForFicha && (
+        <FichaTecnicaModal
+          product={selectedProductForFicha}
+          isOpen={!!selectedProductForFicha}
+          onClose={() => setSelectedProductForFicha(null)}
+          onSaved={(updated) => {
+            setProducts((prev) =>
+              prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
+            );
+            setFeedback(`Ficha técnica e custos de "${updated.name}" atualizados com sucesso!`);
+          }}
+        />
       )}
     </div>
   );
