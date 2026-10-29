@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Ban,
   Info,
+  CreditCard,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -32,6 +33,7 @@ interface ComprasClientViewProps {
   packagings: any[];
   costCenters: any[];
   chartOfAccounts: any[];
+  creditCards?: any[];
 }
 
 export function ComprasClientView({
@@ -41,6 +43,7 @@ export function ComprasClientView({
   packagings,
   costCenters,
   chartOfAccounts,
+  creditCards = [],
 }: ComprasClientViewProps) {
   const router = useRouter();
   const [purchases, setPurchases] = useState<any[]>(initialPurchases);
@@ -55,6 +58,11 @@ export function ComprasClientView({
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [notes, setNotes] = useState("");
   const [generatePayables, setGeneratePayables] = useState(true);
+  const [financialDestination, setFinancialDestination] = useState<
+    "CONTAS_PAGAR" | "CARTAO_CREDITO" | "NENHUM"
+  >("CONTAS_PAGAR");
+  const [selectedCreditCardId, setSelectedCreditCardId] = useState(creditCards[0]?.id || "");
+  const [cardInstallmentsCount, setCardInstallmentsCount] = useState(1);
   const [installmentsCount, setInstallmentsCount] = useState(1);
   const [firstDueDate, setFirstDueDate] = useState(new Date().toISOString().slice(0, 10));
   const [costCenterId, setCostCenterId] = useState(costCenters[0]?.id || "");
@@ -203,6 +211,24 @@ export function ComprasClientView({
     return calculateSubtotal() + (Number(freightAmount) || 0);
   };
 
+  const selectedCard = creditCards.find((c) => c.id === selectedCreditCardId) || creditCards[0];
+
+  const getCardDuePreview = (card: any) => {
+    if (!card) return "-";
+    const today = new Date();
+    let m = today.getMonth();
+    let y = today.getFullYear();
+    if (today.getDate() > (card.closingDay || 25)) {
+      m += 1;
+      if (m > 11) {
+        y += 1;
+        m = 0;
+      }
+    }
+    const d = new Date(y, m, card.dueDay || 10);
+    return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+  };
+
   const handleSavePurchase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!supplierId) {
@@ -227,8 +253,11 @@ export function ComprasClientView({
           invoiceNumber,
           notes,
           items,
-          generatePayables,
-          installmentsCount,
+          financialDestination,
+          generatePayables: financialDestination === "CONTAS_PAGAR",
+          creditCardId: financialDestination === "CARTAO_CREDITO" ? selectedCreditCardId : null,
+          cardInstallments: cardInstallmentsCount,
+          installmentsCount: financialDestination === "CARTAO_CREDITO" ? cardInstallmentsCount : installmentsCount,
           firstDueDate,
           costCenterId,
           chartOfAccountId,
@@ -650,6 +679,21 @@ export function ComprasClientView({
                           {new Date(p.orderDate).toLocaleDateString("pt-BR")}
                           {p.invoiceNumber ? ` • NF: ${p.invoiceNumber}` : ""}
                         </div>
+                        {p.accountPayable && (
+                          <div className="mt-1">
+                            {p.accountPayable.paymentType === "CARTAO" ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                <CreditCard className="w-3 h-3" />
+                                Fatura de Cartão
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                <DollarSign className="w-3 h-3" />
+                                Contas a Pagar
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <span className="font-semibold text-slate-900 dark:text-white block">{p.supplier?.name}</span>
@@ -919,22 +963,128 @@ export function ComprasClientView({
               </div>
 
               {/* Integração Financeira */}
-              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-3">
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="genPay"
-                    checked={generatePayables}
-                    onChange={(e) => setGeneratePayables(e.target.checked)}
-                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
-                  />
-                  <label htmlFor="genPay" className="font-bold text-slate-900 dark:text-white cursor-pointer">
-                    Gerar títulos automaticamente no Contas a Pagar
-                  </label>
+              <div className="p-4 bg-slate-50 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700 space-y-4">
+                <div>
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 block mb-2">
+                    Destino Financeiro do Pedido
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {/* Opção 1: Contas a Pagar */}
+                    <button
+                      type="button"
+                      onClick={() => setFinancialDestination("CONTAS_PAGAR")}
+                      className={`p-3 rounded-xl border text-left flex flex-col justify-between transition ${
+                        financialDestination === "CONTAS_PAGAR"
+                          ? "bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-500 ring-2 ring-indigo-500/20"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <DollarSign
+                          className={`w-4 h-4 ${
+                            financialDestination === "CONTAS_PAGAR" ? "text-indigo-600" : "text-slate-400"
+                          }`}
+                        />
+                        <span
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            financialDestination === "CONTAS_PAGAR"
+                              ? "border-indigo-600 bg-indigo-600 text-white"
+                              : "border-slate-300 dark:border-slate-600"
+                          }`}
+                        >
+                          {financialDestination === "CONTAS_PAGAR" && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </span>
+                      </div>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
+                        Contas a Pagar
+                      </span>
+                      <span className="text-[10px] text-slate-500 mt-0.5">
+                        Boleto, Pix ou Fornecedor
+                      </span>
+                    </button>
+
+                    {/* Opção 2: Faturas de Cartão de Crédito */}
+                    <button
+                      type="button"
+                      onClick={() => setFinancialDestination("CARTAO_CREDITO")}
+                      className={`p-3 rounded-xl border text-left flex flex-col justify-between transition ${
+                        financialDestination === "CARTAO_CREDITO"
+                          ? "bg-purple-50/80 dark:bg-purple-950/40 border-purple-500 ring-2 ring-purple-500/20"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <CreditCard
+                          className={`w-4 h-4 ${
+                            financialDestination === "CARTAO_CREDITO" ? "text-purple-600" : "text-slate-400"
+                          }`}
+                        />
+                        <span
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            financialDestination === "CARTAO_CREDITO"
+                              ? "border-purple-600 bg-purple-600 text-white"
+                              : "border-slate-300 dark:border-slate-600"
+                          }`}
+                        >
+                          {financialDestination === "CARTAO_CREDITO" && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </span>
+                      </div>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
+                        Faturas de Cartão
+                      </span>
+                      <span className="text-[10px] text-slate-500 mt-0.5">
+                        Cartão corporativo ou pessoal
+                      </span>
+                    </button>
+
+                    {/* Opção 3: Não gerar financeiro */}
+                    <button
+                      type="button"
+                      onClick={() => setFinancialDestination("NENHUM")}
+                      className={`p-3 rounded-xl border text-left flex flex-col justify-between transition ${
+                        financialDestination === "NENHUM"
+                          ? "bg-slate-200/70 dark:bg-slate-800 border-slate-400 ring-2 ring-slate-400/20"
+                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <Ban
+                          className={`w-4 h-4 ${
+                            financialDestination === "NENHUM"
+                              ? "text-slate-700 dark:text-slate-300"
+                              : "text-slate-400"
+                          }`}
+                        />
+                        <span
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${
+                            financialDestination === "NENHUM"
+                              ? "border-slate-600 bg-slate-600 text-white"
+                              : "border-slate-300 dark:border-slate-600"
+                          }`}
+                        >
+                          {financialDestination === "NENHUM" && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </span>
+                      </div>
+                      <span className="font-bold text-xs text-slate-900 dark:text-white leading-tight">
+                        Não Gerar Agora
+                      </span>
+                      <span className="text-[10px] text-slate-500 mt-0.5">
+                        Apenas entrada de estoque
+                      </span>
+                    </button>
+                  </div>
                 </div>
 
-                {generatePayables && (
-                  <div className="grid grid-cols-2 gap-3 pt-2">
+                {/* Sub-formulário Contas a Pagar */}
+                {financialDestination === "CONTAS_PAGAR" && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
                     <div>
                       <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
                         Número de Parcelas
@@ -942,13 +1092,16 @@ export function ComprasClientView({
                       <select
                         value={installmentsCount}
                         onChange={(e) => setInstallmentsCount(parseInt(e.target.value, 10))}
-                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-xl"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
                       >
                         <option value={1}>1x À Vista ({formatBRL(calculateTotal())})</option>
-                        <option value={2}>2x Parcelado ({formatBRL(calculateTotal() / 2)} /mês)</option>
-                        <option value={3}>3x Parcelado ({formatBRL(calculateTotal() / 3)} /mês)</option>
-                        <option value={4}>4x Parcelado ({formatBRL(calculateTotal() / 4)} /mês)</option>
-                        <option value={6}>6x Parcelado ({formatBRL(calculateTotal() / 6)} /mês)</option>
+                        <option value={2}>2x de {formatBRL(calculateTotal() / 2)}</option>
+                        <option value={3}>3x de {formatBRL(calculateTotal() / 3)}</option>
+                        <option value={4}>4x de {formatBRL(calculateTotal() / 4)}</option>
+                        <option value={5}>5x de {formatBRL(calculateTotal() / 5)}</option>
+                        <option value={6}>6x de {formatBRL(calculateTotal() / 6)}</option>
+                        <option value={10}>10x de {formatBRL(calculateTotal() / 10)}</option>
+                        <option value={12}>12x de {formatBRL(calculateTotal() / 12)}</option>
                       </select>
                     </div>
 
@@ -961,9 +1114,74 @@ export function ComprasClientView({
                         required
                         value={firstDueDate}
                         onChange={(e) => setFirstDueDate(e.target.value)}
-                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border rounded-xl font-bold"
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
                       />
                     </div>
+                  </div>
+                )}
+
+                {/* Sub-formulário Faturas de Cartão de Crédito */}
+                {financialDestination === "CARTAO_CREDITO" && (
+                  <div className="space-y-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                          Cartão de Crédito *
+                        </label>
+                        {creditCards.length === 0 ? (
+                          <div className="p-2.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-xl text-[11px] text-amber-800 dark:text-amber-200">
+                            Nenhum cartão cadastrado. Cadastre em Financeiro &gt; Faturas de Cartão.
+                          </div>
+                        ) : (
+                          <select
+                            required
+                            value={selectedCreditCardId}
+                            onChange={(e) => setSelectedCreditCardId(e.target.value)}
+                            className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
+                          >
+                            {creditCards.map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {c.nickname} ({c.cardBrand}) • Fecha dia {c.closingDay} / Vence dia {c.dueDay}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                          Parcelas no Cartão
+                        </label>
+                        <select
+                          value={cardInstallmentsCount}
+                          onChange={(e) => setCardInstallmentsCount(parseInt(e.target.value, 10))}
+                          className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-medium"
+                        >
+                          <option value={1}>1x À Vista ({formatBRL(calculateTotal())})</option>
+                          <option value={2}>2x de {formatBRL(calculateTotal() / 2)} /fatura</option>
+                          <option value={3}>3x de {formatBRL(calculateTotal() / 3)} /fatura</option>
+                          <option value={4}>4x de {formatBRL(calculateTotal() / 4)} /fatura</option>
+                          <option value={5}>5x de {formatBRL(calculateTotal() / 5)} /fatura</option>
+                          <option value={6}>6x de {formatBRL(calculateTotal() / 6)} /fatura</option>
+                          <option value={10}>10x de {formatBRL(calculateTotal() / 10)} /fatura</option>
+                          <option value={12}>12x de {formatBRL(calculateTotal() / 12)} /fatura</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {selectedCard && (
+                      <div className="p-3 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                        <div className="flex items-center gap-2">
+                          <CreditCard className="w-4 h-4 text-purple-600 shrink-0" />
+                          <span className="text-purple-950 dark:text-purple-200">
+                            <strong>{selectedCard.nickname}</strong>: Fecha dia {selectedCard.closingDay} / Vencimento dia {selectedCard.dueDay}.
+                          </span>
+                        </div>
+                        <span className="font-bold text-purple-700 dark:text-purple-300">
+                          1ª Parcela: Vence em {getCardDuePreview(selectedCard)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

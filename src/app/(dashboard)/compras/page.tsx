@@ -13,6 +13,7 @@ export default async function ComprasPage() {
     packRes,
     costCentersRes,
     chartRes,
+    cardsRes,
   ] = await Promise.allSettled([
     db.purchase.findMany({
       include: {
@@ -39,6 +40,9 @@ export default async function ComprasPage() {
       where: { isActive: true },
       orderBy: { code: "asc" },
     }),
+    db.creditCard.findMany({
+      orderBy: { nickname: "asc" },
+    }),
   ]);
 
   const purchases = purchasesRes.status === "fulfilled" ? purchasesRes.value : [];
@@ -47,6 +51,7 @@ export default async function ComprasPage() {
   const packagings = packRes.status === "fulfilled" ? packRes.value : [];
   const costCenters = costCentersRes.status === "fulfilled" ? costCentersRes.value : [];
   const chartOfAccounts = chartRes.status === "fulfilled" ? chartRes.value : [];
+  const creditCards = cardsRes.status === "fulfilled" ? cardsRes.value : [];
 
   const serializedPurchases = purchases.map((p) => ({
     ...p,
@@ -77,6 +82,13 @@ export default async function ComprasPage() {
     unitCost: Number(p.unitCost),
   }));
 
+  const serializedCards = creditCards.map((c) => ({
+    ...c,
+    creditLimit: Number(c.creditLimit),
+    createdAt: c.createdAt.toISOString(),
+    updatedAt: c.updatedAt.toISOString(),
+  }));
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -86,7 +98,7 @@ export default async function ComprasPage() {
             Compras & Pedidos de Suprimentos
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Pedidos de compra multi-item com recebimento físico no estoque e integração automática ao Contas a Pagar.
+            Pedidos de compra multi-item com recebimento físico no estoque e integração automática ao Contas a Pagar e Cartões.
           </p>
         </div>
       </div>
@@ -98,6 +110,7 @@ export default async function ComprasPage() {
         packagings={serializedPack}
         costCenters={costCenters}
         chartOfAccounts={chartOfAccounts}
+        creditCards={serializedCards}
       />
     </div>
   );

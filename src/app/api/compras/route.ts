@@ -47,6 +47,9 @@ export async function POST(req: NextRequest) {
       notes,
       items, // array: [{ itemType, itemId, name, quantity, unit, unitCost }]
       generatePayables = true,
+      financialDestination, // "CONTAS_PAGAR" | "CARTAO_CREDITO" | "NENHUM"
+      creditCardId,
+      cardInstallments = 1,
       installmentsCount = 1,
       firstDueDate,
       costCenterId,
@@ -98,8 +101,16 @@ export async function POST(req: NextRequest) {
         include: { items: true },
       });
 
-      // 2. Se optou por gerar Contas a Pagar
-      if (generatePayables && firstDueDate) {
+      // 2. Integração Financeira Automática (Contas a Pagar ou Faturas de Cartão de Crédito)
+      const isCard =
+        financialDestination === "CARTAO_CREDITO" ||
+        (creditCardId && financialDestination !== "CONTAS_PAGAR" && financialDestination !== "NENHUM");
+      const isPayables =
+        (financialDestination === "CONTAS_PAGAR" || (!financialDestination && generatePayables)) &&
+        !isCard &&
+        financialDestination !== "NENHUM";
+
+      if ((isCard && creditCardId) || (isPayables && firstDueDate)) {
         // Tenta puxar o centro de custo e plano de contas pré-cadastrados no próprio item do estoque
         let cCenterId = costCenterId;
         let cAccountId = chartOfAccountId;
@@ -139,35 +150,122 @@ export async function POST(req: NextRequest) {
         }
 
         if (cCenterId && cAccountId) {
-          const numInstallments = Math.max(1, parseInt(installmentsCount, 10) || 1);
-          const installmentValue = Number((totalAmount / numInstallments).toFixed(2));
-          const baseDueDate = new Date(firstDueDate);
+          if (isCard && creditCardId) {
+            // Lança nas Faturas do Cartão de Crédito
+            const card = await tx.creditCard.findUnique({ where: { id: creditCardId } });
+            if (card) {
+              const numInstallments = Math.max(1, parseInt(cardInstallments || installmentsCount, 10) || 1);
+              const installmentValue = Number((totalAmount / numInstallments).toFixed(2));
+              const pDate = orderDate ? new Date(orderDate) : new Date();
 
-          for (let i = 1; i <= numInstallments; i++) {
-            const dueDate = new Date(baseDueDate);
-            dueDate.setMonth(dueDate.getMonth() + (i - 1));
+              for (let i = 1; i <= numInstallments; i++) {
+                let invMonth = pDate.getMonth() + (i - 1);
+                let invYear = pDate.getFullYear();
 
-            const payable = await tx.accountPayable.create({
-              data: {
-                description: `Compra ${purchaseNumber} - ${supplier.name} (${i}/${numInstallments})`,
-                supplierId: supplier.id,
-                costCenterId: cCenterId,
-                chartOfAccountId: cAccountId,
-                originalAmount: installmentValue,
-                competenceDate: new Date(),
-                dueDate,
-                status: "EM_ABERTO",
-                installmentNumber: i,
-                totalInstallments: numInstallments,
-                notes: `Gerado automaticamente pelo pedido de compra ${purchaseNumber}`,
-              },
-            });
+                // Se a data da compra for posterior ao dia de fechamento, a primeira parcela entra no próximo ciclo
+                if (pDate.getDate() > (card.closingDay || 25)) {
+                  invMonth += 1;
+                }
+                if (invMonth > 11) {
+                  invYear += Math.floor(invMonth / 12);
+                  invMonth = invMonth % 12;
+                }
 
-            if (i === 1) {
-              await tx.purchase.update({
-                where: { id: newPurchase.id },
-                data: { accountPayableId: payable.id },
+                const dueDay = card.dueDay || 10;
+                const dueDate = new Date(invYear, invMonth, dueDay);
+
+                // Busca ou cria fatura de cartão para este ciclo
+                let invoice = await tx.creditCardInvoice.findFirst({
+                  where: {
+                    creditCardId: card.id,
+                    referenceMonth: invMonth + 1,
+                    referenceYear: invYear,
+                  },
+                });
+
+                if (!invoice) {
+                  invoice = await tx.creditCardInvoice.create({
+                    data: {
+                      creditCardId: card.id,
+                      referenceMonth: invMonth + 1,
+                      referenceYear: invYear,
+                      closingDate: new Date(invYear, invMonth, card.closingDay || 25),
+                      dueDate,
+                      totalAmount: installmentValue,
+                      isPaid: false,
+                    },
+                  });
+                } else {
+                  await tx.creditCardInvoice.update({
+                    where: { id: invoice.id },
+                    data: {
+                      totalAmount: { increment: installmentValue },
+                    },
+                  });
+                }
+
+                const payable = await tx.accountPayable.create({
+                  data: {
+                    description:
+                      numInstallments > 1
+                        ? `Compra ${purchaseNumber} - ${supplier.name} (${i}/${numInstallments})`
+                        : `Compra ${purchaseNumber} - ${supplier.name}`,
+                    supplierId: supplier.id,
+                    costCenterId: cCenterId,
+                    chartOfAccountId: cAccountId,
+                    originalAmount: installmentValue,
+                    competenceDate: pDate,
+                    dueDate,
+                    scheduledDate: dueDate,
+                    paymentType: "CARTAO",
+                    creditCardInvoiceId: invoice.id,
+                    installmentNumber: i,
+                    totalInstallments: numInstallments,
+                    notes: `Cartão: ${card.nickname} (${card.cardBrand}) • Pedido ${purchaseNumber} - ${notes || ""}`.trim(),
+                    status: "EM_ABERTO",
+                  },
+                });
+
+                if (i === 1) {
+                  await tx.purchase.update({
+                    where: { id: newPurchase.id },
+                    data: { accountPayableId: payable.id },
+                  });
+                }
+              }
+            }
+          } else if (isPayables && firstDueDate) {
+            // Lança no Contas a Pagar tradicional
+            const numInstallments = Math.max(1, parseInt(installmentsCount, 10) || 1);
+            const installmentValue = Number((totalAmount / numInstallments).toFixed(2));
+            const baseDueDate = new Date(firstDueDate);
+
+            for (let i = 1; i <= numInstallments; i++) {
+              const dueDate = new Date(baseDueDate);
+              dueDate.setMonth(dueDate.getMonth() + (i - 1));
+
+              const payable = await tx.accountPayable.create({
+                data: {
+                  description: `Compra ${purchaseNumber} - ${supplier.name} (${i}/${numInstallments})`,
+                  supplierId: supplier.id,
+                  costCenterId: cCenterId,
+                  chartOfAccountId: cAccountId,
+                  originalAmount: installmentValue,
+                  competenceDate: new Date(),
+                  dueDate,
+                  status: "EM_ABERTO",
+                  installmentNumber: i,
+                  totalInstallments: numInstallments,
+                  notes: `Gerado automaticamente pelo pedido de compra ${purchaseNumber}`,
+                },
               });
+
+              if (i === 1) {
+                await tx.purchase.update({
+                  where: { id: newPurchase.id },
+                  data: { accountPayableId: payable.id },
+                });
+              }
             }
           }
         }
