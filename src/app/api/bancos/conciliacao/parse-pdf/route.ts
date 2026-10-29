@@ -1,15 +1,77 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { PDFParse } from "pdf-parse";
 import zlib from "zlib";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 /**
- * Extrai texto bruto de um buffer de PDF inspecionando streams FlateDecode e operadores Tj/TJ.
+ * Identifica se a linha ou descrição é apenas um cabeçalho, saldo ou resumo do extrato
+ * e não uma transação real.
+ */
+function isBalanceOrHeader(desc: string): boolean {
+  const d = desc.toUpperCase();
+  return (
+    d.includes("SALDO DO DIA") ||
+    d.includes("SALDO ANTERIOR") ||
+    d.includes("SALDO FINAL") ||
+    d.includes("SALDO TOTAL") ||
+    d.includes("SDO CTA") ||
+    d.includes("SALDO DISPONIVEL") ||
+    d.includes("SALDO DISPONÍVEL") ||
+    d.includes("SALDO EM CONTA") ||
+    d.includes("LIMITE DA CONTA") ||
+    d.includes("TOTAL CONTRATADO") ||
+    d.includes("SALDO APLIC AUT") ||
+    d.includes("SALDO PROVISORIO") ||
+    d.includes("SALDO PROVISÓRIO") ||
+    d.includes("TOTAL APLICADO") ||
+    d.includes("RESUMO DO DIA") ||
+    d.includes("SDO BANCO") ||
+    d.includes("TOTAL DE ENTRADAS") ||
+    d.includes("TOTAL DE SAIDAS") ||
+    d.includes("TOTAL DE SAÍDAS") ||
+    d.includes("TOTAL DE DEBITOS") ||
+    d.includes("TOTAL DE DÉBITOS") ||
+    d.includes("TOTAL DE CREDITOS") ||
+    d.includes("TOTAL DE CRÉDITOS") ||
+    d.includes("SUBTOTAL") ||
+    d.includes("EXTRATO CONTA") ||
+    d.includes("PERÍODO DE VISUALIZAÇÃO") ||
+    d.includes("PERIODO DE VISUALIZACAO") ||
+    d.includes("DATA LANÇAMENTOS VALOR") ||
+    d.includes("DATA LANCAMENTOS VALOR") ||
+    d.includes("LIMITE UTILIZADO") ||
+    d.includes("LIMITE DISPONÍVEL") ||
+    d.includes("LIMITE DISPONIVEL")
+  );
+}
+
+/**
+ * Extração de texto de PDF usando pdf-parse (com resolução completa de fontes Identity-H e CMaps).
+ */
+async function extractTextWithPdfParse(buffer: Buffer): Promise<string> {
+  try {
+    const parser = new PDFParse({ data: buffer });
+    const result = await parser.getText();
+    await parser.destroy();
+    if (result && typeof result.text === "string" && result.text.trim().length > 0) {
+      return result.text;
+    }
+  } catch (err) {
+    console.warn("pdf-parse falhou ao extrair texto, tentando fallback bruto:", err);
+  }
+  return "";
+}
+
+/**
+ * Fallback para extrair texto inspecionando streams FlateDecode se pdf-parse falhar.
  */
 function extractRawTextFromPDF(buffer: Buffer): string {
   const binary = buffer.toString("binary");
   const extractedChunks: string[] = [];
 
-  // 1. Localiza streams no PDF
   const streamRegex = /stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g;
   let match: RegExpExecArray | null;
 
@@ -18,7 +80,6 @@ function extractRawTextFromPDF(buffer: Buffer): string {
     let decompressed: Buffer | null = null;
 
     try {
-      // Tenta descomprimir com zlib / FlateDecode
       const streamBuf = Buffer.from(rawStream, "binary");
       decompressed = zlib.inflateSync(streamBuf);
     } catch {
@@ -26,14 +87,12 @@ function extractRawTextFromPDF(buffer: Buffer): string {
         const streamBuf = Buffer.from(rawStream, "binary");
         decompressed = zlib.inflateRawSync(streamBuf);
       } catch {
-        // Stream não comprimido ou formato diferente
         decompressed = Buffer.from(rawStream, "binary");
       }
     }
 
     if (decompressed) {
       const text = decompressed.toString("latin1");
-      // Extrai operadores de texto do PDF: (texto) Tj ou [(t1)(t2)] TJ
       const tjRegex = /\(([^)]*)\)\s*Tj/g;
       let tjMatch: RegExpExecArray | null;
       while ((tjMatch = tjRegex.exec(text)) !== null) {
@@ -51,7 +110,6 @@ function extractRawTextFromPDF(buffer: Buffer): string {
     }
   }
 
-  // 2. Se nenhum chunk foi encontrado via streams, tenta extrair strings literais no PDF completo
   if (extractedChunks.length === 0) {
     const literalRegex = /\(([^)]{3,})\)/g;
     let litMatch: RegExpExecArray | null;
@@ -60,7 +118,6 @@ function extractRawTextFromPDF(buffer: Buffer): string {
     }
   }
 
-  // Decodifica escapes básicos
   return extractedChunks
     .join(" ")
     .replace(/\\n/g, "\n")
@@ -77,27 +134,32 @@ function extractRawTextFromPDF(buffer: Buffer): string {
 function parseExtratoTransactions(rawText: string) {
   const transactions: Array<{ date: string; description: string; amount: number }> = [];
   const lines = rawText.split(/[\r\n]+/);
-
   const currentYear = new Date().getFullYear();
 
-  // Regex para linha de extrato bancário brasileiro:
-  // Ex: "28/10/2026 PIX RECEBIDO JOAO SILVA 150,00"
-  // Ex: "25/10 PAGAMENTO FORNECEDOR CERA -250,50"
+  // Linha de extrato com data no início, descrição no meio, e valor (+ opcional saldo) no final
+  // Ex: "27/10/2026 PIX TRANSF Rita de27/10 2.000,00"
+  // Ex: "26/10/2026 APLICACAO COFRINHOS -150,00"
+  // Ex: "26/10/2026 PIX TRANSF David V25/10 -100,00 41,20"
   // Ex: "15/10/2026 TARIFA BANCARIA 19,90 D"
-  const dateAmountRegex = /(\d{2}\/\d{2}(?:\/\d{2,4})?)\s+(.*?)\s+([+-]?\s*(?:R\$\s*)?[\d.]*,\d{2}(?:\s*[CDcd])?)/i;
+  const lineRegex = /^(\d{2}[/.-]\d{2}(?:[/.-]\d{2,4})?)\s+(.+?)\s+([+-]?\s*(?:R\$\s*)?[\d.]*,\d{2}(?:\s*[CDcd])?)(?:\s+[+-]?\s*(?:R\$\s*)?[\d.]*,\d{2}(?:\s*[CDcd])?)?$/;
 
-  for (const line of lines) {
-    const trimmed = line.trim();
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
     if (!trimmed) continue;
 
-    const match = trimmed.match(dateAmountRegex);
+    const match = trimmed.match(lineRegex);
     if (match) {
-      let rawDate = match[1];
-      const desc = match[2].trim();
-      let rawVal = match[3].trim();
+      const rawDate = match[1];
+      const desc = match[2].trim().replace(/\s+/g, " ");
+      const rawVal = match[3].trim();
 
-      // Normaliza data para YYYY-MM-DD
-      const dateParts = rawDate.split("/");
+      // Ignora linhas de saldo e cabeçalhos
+      if (isBalanceOrHeader(desc)) {
+        continue;
+      }
+
+      // Converte data para YYYY-MM-DD
+      const dateParts = rawDate.split(/[/.-]/);
       let day = dateParts[0];
       let month = dateParts[1];
       let year = dateParts[2] || String(currentYear);
@@ -137,14 +199,16 @@ function parseExtratoTransactions(rawText: string) {
 
   // Fallback se o PDF gerou texto contínuo sem quebras por linha
   if (transactions.length === 0) {
-    const globalTrxRegex = /(\d{2}\/\d{2}(?:\/\d{4})?)\s+([A-Za-z0-9\s\-_./]+?)\s+([+-]?\s*(?:R\$\s*)?[\d.]*,\d{2}(?:\s*[CDcd])?)/g;
+    const globalTrxRegex = /(\d{2}[/.-]\d{2}(?:[/.-]\d{4})?)\s+([A-Za-z0-9\s\-_./]+?)\s+([+-]?\s*(?:R\$\s*)?[\d.]*,\d{2}(?:\s*[CDcd])?)/g;
     let globalMatch: RegExpExecArray | null;
     while ((globalMatch = globalTrxRegex.exec(rawText)) !== null) {
-      let rawDate = globalMatch[1];
-      const desc = globalMatch[2].trim();
-      let rawVal = globalMatch[3].trim();
+      const rawDate = globalMatch[1];
+      const desc = globalMatch[2].trim().replace(/\s+/g, " ");
+      const rawVal = globalMatch[3].trim();
 
-      const dateParts = rawDate.split("/");
+      if (isBalanceOrHeader(desc)) continue;
+
+      const dateParts = rawDate.split(/[/.-]/);
       let day = dateParts[0];
       let month = dateParts[1];
       let year = dateParts[2] || String(currentYear);
@@ -163,7 +227,7 @@ function parseExtratoTransactions(rawText: string) {
       if (!isNaN(num)) {
         transactions.push({
           date: isoDate,
-          description: desc,
+          description: desc || "Lançamento Extrato",
           amount: isNegative ? -Math.abs(num) : num,
         });
       }
@@ -188,8 +252,15 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Extrai o texto contido no PDF
-    const text = extractRawTextFromPDF(buffer);
+    // 1. Tenta extrair com pdf-parse (decodifica CMaps e fontes Identity-H de bancos como Itaú)
+    let text = await extractTextWithPdfParse(buffer);
+
+    // 2. Se falhar ou vier vazio, usa fallback do extractor de streams
+    if (!text || text.trim().length === 0) {
+      text = extractRawTextFromPDF(buffer);
+    }
+
+    // 3. Processa e padroniza as transações
     const transactions = parseExtratoTransactions(text);
 
     // Converte para formato texto amigável: DD/MM/YYYY; Descrição; Valor

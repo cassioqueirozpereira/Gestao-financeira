@@ -74,9 +74,29 @@ export function ConciliacaoClientView({
     }).format(val);
   };
 
-  // Parser de OFX / CSV simples
+  // Parser de OFX / CSV / Extrato Bancário copiado
   const parseExtrato = (text: string) => {
     const parsed: Array<{ date: string; description: string; amount: number; fitid?: string }> = [];
+
+    const isBalanceOrHeader = (desc: string) => {
+      const d = desc.toUpperCase();
+      return (
+        d.includes("SALDO DO DIA") ||
+        d.includes("SALDO ANTERIOR") ||
+        d.includes("SALDO FINAL") ||
+        d.includes("SALDO TOTAL") ||
+        d.includes("SDO CTA") ||
+        d.includes("SALDO DISPONIVEL") ||
+        d.includes("SALDO DISPONÍVEL") ||
+        d.includes("SALDO EM CONTA") ||
+        d.includes("LIMITE DA CONTA") ||
+        d.includes("TOTAL CONTRATADO") ||
+        d.includes("SALDO APLIC AUT") ||
+        d.includes("SALDO PROVISORIO") ||
+        d.includes("EXTRATO CONTA") ||
+        d.includes("DATA LANÇAMENTOS")
+      );
+    };
 
     // Tenta formato OFX se contiver STMTTRN
     if (text.includes("<STMTTRN>")) {
@@ -99,21 +119,34 @@ export function ConciliacaoClientView({
           const description = memoMatch ? memoMatch[1].trim() : "Transação OFX";
           const fitid = fitidMatch ? fitidMatch[1].trim() : undefined;
 
-          parsed.push({ date: dateStr, description, amount, fitid });
+          if (!isBalanceOrHeader(description)) {
+            parsed.push({ date: dateStr, description, amount, fitid });
+          }
         }
       }
     } else {
-      // Formato Linhas CSV ou Copiado do Banco (Data; Descrição; Valor)
+      // Formato Linhas CSV ou Copiado do Banco (Data; Descrição; Valor) ou espaço
       const lines = text.split("\n");
+      const currentYear = new Date().getFullYear();
+
       for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("Data")) continue;
+        if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("Data") || trimmed.startsWith("data")) continue;
 
         const parts = trimmed.includes(";") ? trimmed.split(";") : trimmed.includes(",") ? trimmed.split(",") : trimmed.split("\t");
         if (parts.length >= 3) {
           const rawDate = parts[0].trim();
           const description = parts[1].trim();
           let rawAmount = parts[2].trim().replace("R$", "").replace(/\s/g, "");
+
+          if (isBalanceOrHeader(description)) continue;
+
+          let isNegative = false;
+          if (rawAmount.includes("-") || rawAmount.toUpperCase().endsWith("D")) {
+            isNegative = true;
+          }
+
+          rawAmount = rawAmount.replace(/[+-]/g, "").replace(/[CDcd]/gi, "").trim();
 
           // Normaliza formato brasileiro 1.500,00 ou americano 1500.00
           if (rawAmount.includes(",") && rawAmount.includes(".")) {
@@ -122,16 +155,52 @@ export function ConciliacaoClientView({
             rawAmount = rawAmount.replace(",", ".");
           }
 
-          const amount = parseFloat(rawAmount);
+          let amount = parseFloat(rawAmount);
           if (!isNaN(amount)) {
+            if (isNegative) amount = -Math.abs(amount);
+
             // Converte DD/MM/AAAA para AAAA-MM-DD se necessário
             let finalDate = rawDate;
             if (rawDate.includes("/")) {
               const [d, m, y] = rawDate.split("/");
-              finalDate = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+              let fullY = y || String(currentYear);
+              if (fullY.length === 2) fullY = `20${fullY}`;
+              finalDate = `${fullY}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
             }
 
             parsed.push({ date: finalDate, description, amount });
+          }
+        } else {
+          // Fallback para linha de extrato bancário separada por espaços
+          // Ex: "27/10/2026 PIX TRANSF Rita de27/10 2.000,00"
+          const spaceMatch = trimmed.match(/^(\d{2}[/.-]\d{2}(?:[/.-]\d{2,4})?)\s+(.+?)\s+([+-]?\s*(?:R\$\s*)?[\d.]*,\d{2}(?:\s*[CDcd])?)(?:\s+[+-]?\s*(?:R\$\s*)?[\d.]*,\d{2}(?:\s*[CDcd])?)?$/);
+          if (spaceMatch) {
+            const rawDate = spaceMatch[1];
+            const description = spaceMatch[2].trim();
+            const rawVal = spaceMatch[3].trim();
+
+            if (isBalanceOrHeader(description)) continue;
+
+            const dateParts = rawDate.split(/[/.-]/);
+            let day = dateParts[0];
+            let month = dateParts[1];
+            let year = dateParts[2] || String(currentYear);
+            if (year.length === 2) year = `20${year}`;
+            const isoDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+
+            let isNegative = rawVal.includes("-") || rawVal.toUpperCase().endsWith("D");
+            let cleanVal = rawVal.replace(/[+-]/g, "").replace(/R\$/gi, "").replace(/[CDcd]/gi, "").trim();
+            if (cleanVal.includes(".") && cleanVal.includes(",")) {
+              cleanVal = cleanVal.replace(/\./g, "").replace(",", ".");
+            } else if (cleanVal.includes(",")) {
+              cleanVal = cleanVal.replace(",", ".");
+            }
+
+            let amount = parseFloat(cleanVal);
+            if (!isNaN(amount)) {
+              if (isNegative) amount = -Math.abs(amount);
+              parsed.push({ date: isoDate, description, amount });
+            }
           }
         }
       }
