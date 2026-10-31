@@ -8,12 +8,36 @@ export const dynamic = "force-dynamic";
 
 export default async function CatalogPage() {
   let products: any[] = [];
+  let rawMaterials: any[] = [];
+  let packagings: any[] = [];
+  let chartOfAccounts: any[] = [];
+
   try {
-    products = await db.product.findMany({
-      orderBy: [{ category: "asc" }, { basePrice: "asc" }],
-    });
+    const [prods, raws, packs, coas] = await Promise.all([
+      db.product.findMany({
+        orderBy: [{ category: "asc" }, { basePrice: "asc" }],
+      }),
+      db.rawMaterial.findMany({
+        where: { isActive: true },
+        include: { chartOfAccount: true },
+        orderBy: { name: "asc" },
+      }),
+      db.packaging.findMany({
+        where: { isActive: true },
+        include: { chartOfAccount: true },
+        orderBy: { name: "asc" },
+      }),
+      db.chartOfAccount.findMany({
+        where: { isActive: true, code: { in: ["2", "2.1", "2.2", "2.3"] } },
+        orderBy: { code: "asc" },
+      }),
+    ]);
+    products = prods;
+    rawMaterials = raws;
+    packagings = packs;
+    chartOfAccounts = coas;
   } catch (error) {
-    console.error("Erro ao carregar produtos:", error);
+    console.error("Erro ao carregar dados do catálogo e insumos:", error);
   }
 
   const storedSections = getStoredCatalogSections();
@@ -44,11 +68,42 @@ export default async function CatalogPage() {
     console.warn("Aviso na limpeza de categorias com prefixo:", cleanErr);
   }
 
-  // Serializa datas
+  // Serializa datas e Decimals
   const serializedProducts = products.map((p) => ({
     ...p,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
+  }));
+
+  const serializedRawMaterials = rawMaterials.map((r) => ({
+    id: r.id,
+    name: r.name,
+    category: r.category || "",
+    unit: r.unit || "G",
+    unitCost: Number(r.unitCost) || 0,
+    currentStock: Number(r.currentStock) || 0,
+    chartOfAccountId: r.chartOfAccountId || null,
+    chartOfAccountCode: r.chartOfAccount?.code || null,
+    chartOfAccountName: r.chartOfAccount?.name || null,
+  }));
+
+  const serializedPackagings = packagings.map((p) => ({
+    id: p.id,
+    name: p.name,
+    unit: p.unit || "UN",
+    unitCost: Number(p.unitCost) || 0,
+    currentStock: Number(p.currentStock) || 0,
+    chartOfAccountId: p.chartOfAccountId || null,
+    chartOfAccountCode: p.chartOfAccount?.code || null,
+    chartOfAccountName: p.chartOfAccount?.name || null,
+  }));
+
+  const serializedChartOfAccounts = chartOfAccounts.map((coa) => ({
+    id: coa.id,
+    code: coa.code,
+    name: coa.name,
+    level: coa.level,
+    type: coa.type,
   }));
 
   // Constrói as seções EXCLUSIVAMENTE a partir das categorias reais salvas no banco de dados
@@ -103,6 +158,9 @@ export default async function CatalogPage() {
       <CatalogClientView
         initialProducts={serializedProducts}
         categoryLabels={categoryLabels}
+        initialRawMaterials={serializedRawMaterials}
+        initialPackagings={serializedPackagings}
+        initialChartOfAccounts={serializedChartOfAccounts}
       />
     </div>
   );

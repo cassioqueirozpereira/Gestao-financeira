@@ -736,8 +736,8 @@ export function ContractsClientView({
 
       {/* Modal - Geração de Contrato */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl p-6 shadow-2xl relative">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-5xl p-6 sm:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
               Emitir Novo Contrato Automático
             </h3>
@@ -893,8 +893,8 @@ export function ContractsClientView({
 
       {/* Modal - Edição do Contrato [Item 8] */}
       {editingContract && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-5xl p-6 sm:p-8 shadow-2xl max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <h3 className="text-base font-bold text-slate-900 dark:text-white mb-4">
               Editar Contrato {editingContract.contractNumber}
             </h3>
@@ -1018,8 +1018,8 @@ export function ContractsClientView({
 
       {/* Modal - Detalhes Completos do Contrato [Item 13] */}
       {detailsContract && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-2xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-5xl p-6 sm:p-8 shadow-2xl space-y-4 max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3">
               <div>
                 <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
@@ -1133,8 +1133,8 @@ export function ContractsClientView({
 
       {/* Modal - Cadastro e Edição de Cliente & Mensalidade (Item 2) */}
       {showClientModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-5xl p-6 sm:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-4 border-b border-slate-200 dark:border-slate-800 pb-3">
               <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Users className="w-5 h-5 text-indigo-600" />
@@ -1299,8 +1299,8 @@ export function ContractsClientView({
 
       {/* Modal - Gerar Próximos Meses da Mensalidade (Item 2) */}
       {feeModalCustomer && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-lg p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl p-6 sm:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3 mb-4">
               <div>
                 <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1">

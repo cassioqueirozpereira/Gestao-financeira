@@ -578,8 +578,8 @@ export function ConciliacaoClientView({
 
       {/* Modal - Importar Extrato OFX ou CSV */}
       {showImportModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl shadow-2xl p-6 relative">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl shadow-2xl p-6 sm:p-8 relative max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
                 <Upload className="w-5 h-5 text-indigo-600" />
@@ -652,8 +652,8 @@ export function ConciliacaoClientView({
 
       {/* Modal - Criar Título Inline e Liquidar */}
       {inlineModalTx && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-md shadow-2xl p-6 relative text-xs">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl shadow-2xl p-6 sm:p-8 relative text-xs max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 dark:border-slate-800">
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
                 Criar Título & Liquidar Imediatamente

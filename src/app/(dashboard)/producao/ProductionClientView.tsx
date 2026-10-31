@@ -427,8 +427,8 @@ export function ProductionClientView({
 
       {/* Modal - Calculadora Dinâmica de Matéria-Prima [Item 9] */}
       {showModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full h-full sm:max-w-[96vw] sm:max-h-[96vh] p-6 sm:p-8 shadow-2xl relative overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3 mb-4">
               <div>
                 <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1">

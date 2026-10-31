@@ -21,6 +21,10 @@ import {
   Sparkles,
   AlertCircle,
   AlertTriangle,
+  Layers,
+  Box,
+  TrendingUp,
+  Check,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FichaTecnicaModal } from "./FichaTecnicaModal";
@@ -28,11 +32,17 @@ import { FichaTecnicaModal } from "./FichaTecnicaModal";
 interface CatalogClientViewProps {
   initialProducts: any[];
   categoryLabels: Record<string, string>;
+  initialRawMaterials?: any[];
+  initialPackagings?: any[];
+  initialChartOfAccounts?: any[];
 }
 
 export function CatalogClientView({
   initialProducts,
   categoryLabels,
+  initialRawMaterials = [],
+  initialPackagings = [],
+  initialChartOfAccounts = [],
 }: CatalogClientViewProps) {
   const router = useRouter();
   const [products, setProducts] = useState(initialProducts);
@@ -137,15 +147,206 @@ export function CatalogClientView({
   const [sectionNameInput, setSectionNameInput] = useState("");
   const [savingSection, setSavingSection] = useState(false);
 
-  // Form states de criação
+  // Insumos e Plano de Contas carregados para Ficha Técnica e Criação
+  const [rawMaterials, setRawMaterials] = useState<any[]>(initialRawMaterials);
+  const [packagings, setPackagings] = useState<any[]>(initialPackagings);
+  const [chartOfAccounts, setChartOfAccounts] = useState<any[]>(initialChartOfAccounts);
+
+  useEffect(() => {
+    if (rawMaterials.length === 0 || packagings.length === 0) {
+      fetch("/api/estoque")
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.rawMaterials) setRawMaterials(data.rawMaterials);
+          if (data.packagings) setPackagings(data.packagings);
+          if (data.chartOfAccounts) setChartOfAccounts(data.chartOfAccounts);
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  // Form states de criação (Repaginado sem custo/margem fictícios)
   const [createName, setCreateName] = useState("");
-  const [createCategory, setCreateCategory] = useState("VELAS_NORMAIS_COLORIDAS");
+  const [createCategory, setCreateCategory] = useState("Velas Normais e Coloridas");
   const [createBasePrice, setCreateBasePrice] = useState("35.00");
-  const [createCost, setCreateCost] = useState("15.00");
-  const [createMargin, setCreateMargin] = useState("50");
   const [createStock, setCreateStock] = useState("10");
   const [createMinStock, setCreateMinStock] = useState("5");
   const [createDescription, setCreateDescription] = useState("");
+
+  // Composição selecionada na criação do item
+  const [selectedRawMaterials, setSelectedRawMaterials] = useState<
+    Array<{
+      rawMaterialId: string;
+      name: string;
+      quantity: number;
+      unit: string;
+      unitCost: number;
+    }>
+  >([]);
+
+  const [selectedPackagings, setSelectedPackagings] = useState<
+    Array<{
+      packagingId: string;
+      name: string;
+      quantity: number;
+      unitCost: number;
+    }>
+  >([]);
+
+  const [rawSearchTerm, setRawSearchTerm] = useState("");
+  const [packSearchTerm, setPackSearchTerm] = useState("");
+  const [mobileTab, setMobileTab] = useState<"materials" | "packaging">("materials");
+
+  // Identificação dinâmica da Seção Visual e Conta Contábil (Velas = 2.1, Resinas = 2.2, Embalagens = 2.3)
+  const isVelasCategory = (cat: string) => {
+    const c = (cat || "").toLowerCase();
+    return c.startsWith("vela") || c.includes("vela");
+  };
+
+  const isResinasCategory = (cat: string) => {
+    const c = (cat || "").toLowerCase();
+    return c.startsWith("resina") || c.includes("resina");
+  };
+
+  const activeRawAccountCode = isVelasCategory(createCategory)
+    ? "2.1"
+    : isResinasCategory(createCategory)
+    ? "2.2"
+    : "2.1";
+
+  const activeRawAccountName = isVelasCategory(createCategory)
+    ? "Conta 2.1 • Matéria-Prima para Velas (Ceras, Essências, Pavios)"
+    : isResinasCategory(createCategory)
+    ? "Conta 2.2 • Matéria-Prima para Resinas (Epóxi, Pigmentos, Moldes)"
+    : "Custos Diretos de Produção • Matérias-Primas";
+
+  // Matérias-primas filtradas pelo Plano de Contas e Seção Visual
+  const filteredRawMaterials = rawMaterials.filter((raw) => {
+    const accCode = raw.chartOfAccountCode || raw.chartOfAccount?.code || "";
+    const cat = (raw.category || "").toLowerCase();
+    const name = (raw.name || "").toLowerCase();
+
+    let matchesCategory = true;
+    if (isVelasCategory(createCategory)) {
+      matchesCategory =
+        accCode === "2.1" ||
+        cat === "cera" ||
+        cat === "essencia" ||
+        cat === "pavio" ||
+        cat.includes("vela") ||
+        name.includes("cera") ||
+        name.includes("essência") ||
+        name.includes("essencia") ||
+        name.includes("pavio") ||
+        name.includes("parafina");
+    } else if (isResinasCategory(createCategory)) {
+      matchesCategory =
+        accCode === "2.2" ||
+        cat === "resina" ||
+        cat === "pigmento" ||
+        cat === "molde" ||
+        cat.includes("resina") ||
+        name.includes("resina") ||
+        name.includes("epóxi") ||
+        name.includes("epoxi") ||
+        name.includes("pigmento");
+    }
+
+    if (!matchesCategory) return false;
+    if (!rawSearchTerm.trim()) return true;
+    return name.includes(rawSearchTerm.toLowerCase());
+  });
+
+  // Embalagens filtradas (Conta 2.3)
+  const filteredPackagings = packagings.filter((pack) => {
+    if (!packSearchTerm.trim()) return true;
+    return (pack.name || "").toLowerCase().includes(packSearchTerm.toLowerCase());
+  });
+
+  // Cálculos automáticos reais de custos da composição
+  const calculatedRawTotal = selectedRawMaterials.reduce((acc, it) => {
+    const qty = Number(it.quantity) || 0;
+    const cost = Number(it.unitCost) || 0;
+    const isGram = it.unit?.toUpperCase() === "G";
+    const lineCost = isGram ? (qty / 1000) * cost : qty * cost;
+    return acc + lineCost;
+  }, 0);
+
+  const calculatedPackTotal = selectedPackagings.reduce((acc, it) => {
+    const qty = Number(it.quantity) || 0;
+    const cost = Number(it.unitCost) || 0;
+    return acc + qty * cost;
+  }, 0);
+
+  const calculatedDirectCost = calculatedRawTotal + calculatedPackTotal;
+  const basePriceNum = parseFloat(createBasePrice) || 0;
+  const calculatedProfitBRL = basePriceNum > 0 ? basePriceNum - calculatedDirectCost : 0;
+  const calculatedMarginPct =
+    basePriceNum > 0
+      ? Number((((basePriceNum - calculatedDirectCost) / basePriceNum) * 100).toFixed(1))
+      : 0;
+
+  // Ações para manipulação dos insumos e embalagens da composição
+  const handleAddRawMaterial = (rawId: string) => {
+    if (!rawId) return;
+    const raw = rawMaterials.find((r) => r.id === rawId);
+    if (!raw) return;
+    if (selectedRawMaterials.some((it) => it.rawMaterialId === raw.id)) {
+      showToast("info", `"${raw.name}" já está na lista de composição.`);
+      return;
+    }
+    const defUnit = raw.unit?.toUpperCase() === "KG" ? "G" : raw.unit || "G";
+    const defQty = defUnit === "G" ? 50 : 1;
+    setSelectedRawMaterials((prev) => [
+      ...prev,
+      {
+        rawMaterialId: raw.id,
+        name: raw.name,
+        quantity: defQty,
+        unit: defUnit,
+        unitCost: Number(raw.unitCost) || 0,
+      },
+    ]);
+  };
+
+  const handleUpdateRawMaterialQty = (rawId: string, qty: number) => {
+    setSelectedRawMaterials((prev) =>
+      prev.map((it) => (it.rawMaterialId === rawId ? { ...it, quantity: qty } : it))
+    );
+  };
+
+  const handleRemoveRawMaterial = (rawId: string) => {
+    setSelectedRawMaterials((prev) => prev.filter((it) => it.rawMaterialId !== rawId));
+  };
+
+  const handleAddPackaging = (packId: string) => {
+    if (!packId) return;
+    const pack = packagings.find((p) => p.id === packId);
+    if (!pack) return;
+    if (selectedPackagings.some((it) => it.packagingId === pack.id)) {
+      showToast("info", `"${pack.name}" já está na lista.`);
+      return;
+    }
+    setSelectedPackagings((prev) => [
+      ...prev,
+      {
+        packagingId: pack.id,
+        name: pack.name,
+        quantity: 1,
+        unitCost: Number(pack.unitCost) || 0,
+      },
+    ]);
+  };
+
+  const handleUpdatePackagingQty = (packId: string, qty: number) => {
+    setSelectedPackagings((prev) =>
+      prev.map((it) => (it.packagingId === packId ? { ...it, quantity: qty } : it))
+    );
+  };
+
+  const handleRemovePackaging = (packId: string) => {
+    setSelectedPackagings((prev) => prev.filter((it) => it.packagingId !== packId));
+  };
 
   // Form states de edição do produto
   const [name, setName] = useState("");
@@ -375,11 +576,19 @@ export function CatalogClientView({
           name: createName,
           category: createCategory,
           basePrice: parseFloat(createBasePrice) || 0,
-          calculatedCost: parseFloat(createCost) || 0,
-          desiredMargin: parseFloat(createMargin) || 30,
+          calculatedCost: Number(calculatedDirectCost.toFixed(2)),
+          desiredMargin: calculatedMarginPct,
           stockQuantity: parseInt(createStock, 10) || 0,
           minStockQuantity: parseInt(createMinStock, 10) || 5,
           description: createDescription,
+          items: selectedRawMaterials.map((it) => ({
+            rawMaterialId: it.rawMaterialId,
+            quantity: it.unit?.toUpperCase() === "G" ? it.quantity / 1000 : it.quantity,
+          })),
+          packagingItems: selectedPackagings.map((it) => ({
+            packagingId: it.packagingId,
+            quantity: it.quantity,
+          })),
         }),
       });
 
@@ -390,6 +599,8 @@ export function CatalogClientView({
       setShowCreateModal(false);
       setCreateName("");
       setCreateDescription("");
+      setSelectedRawMaterials([]);
+      setSelectedPackagings([]);
       showToast("success", `Item "${data.product.name}" adicionado ao catálogo com sucesso!`);
       router.refresh();
     } catch (err: any) {
@@ -597,60 +808,62 @@ export function CatalogClientView({
 
       {/* Modal - Edição do Produto & Calculadora de Margem [Item 11] */}
       {editingProduct && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-xl p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-5xl p-6 sm:p-8 shadow-2xl relative max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-start border-b border-slate-200 dark:border-slate-800 pb-3 mb-4">
               <div>
                 <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-1">
                   <Calculator className="w-3.5 h-3.5" />
                   Calculadora de Preço de Venda com Margem de Lucro
                 </span>
-                <h3 className="text-lg font-extrabold text-slate-900 dark:text-white">
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
                   Editar: {editingProduct.name}
                 </h3>
               </div>
               <button
                 onClick={() => setEditingProduct(null)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveProduct} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                  Nome do Modelo / Produto
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
-                />
-              </div>
+            <form onSubmit={handleSaveProduct} className="space-y-5 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Nome do Modelo / Produto
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-sm"
+                  />
+                </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                  Seção Visual do Catálogo
-                </label>
-                <select
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
-                >
-                  {Object.entries(visualSections).map(([catKey, catLabel]) => (
-                    <option key={catKey} value={catKey}>
-                      {catLabel}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                    Seção Visual do Catálogo
+                  </label>
+                  <select
+                    value={editCategory}
+                    onChange={(e) => setEditCategory(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-sm"
+                  >
+                    {Object.entries(visualSections).map(([catKey, catLabel]) => (
+                      <option key={catKey} value={catKey}>
+                        {catLabel}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               {/* Integração Automática com Compras, Estoque e Financeiro */}
               <div className="p-4 bg-gradient-to-br from-indigo-50/80 to-slate-50 dark:from-indigo-950/40 dark:to-slate-900 border border-indigo-200 dark:border-indigo-900/60 rounded-2xl space-y-3">
-                <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                   <div>
                     <span className="font-black text-indigo-900 dark:text-indigo-300 uppercase text-[10px] tracking-wider flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
@@ -661,7 +874,7 @@ export function CatalogClientView({
                     </p>
                   </div>
 
-                  <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 px-2.5 py-1 bg-white dark:bg-slate-900 rounded-xl border border-indigo-200 dark:border-indigo-800 shrink-0">
+                  <span className="text-xs font-black text-indigo-700 dark:text-indigo-300 px-3 py-1.5 bg-white dark:bg-slate-900 rounded-xl border border-indigo-200 dark:border-indigo-800 shrink-0 shadow-xs">
                     Custo Real: {formatBRL(editingProduct.calculatedCost || totalCalculatedCost)}
                   </span>
                 </div>
@@ -676,15 +889,15 @@ export function CatalogClientView({
                   className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition flex items-center justify-center gap-2 shadow-md shadow-indigo-600/20"
                 >
                   <Calculator className="w-4 h-4" />
-                  <span>Abrir Ficha Técnica Completa (Ingredientes, Horas & Canais)</span>
+                  <span>Abrir Ficha Técnica Completa (Ingredientes, Horas & Canais de Venda)</span>
                 </button>
               </div>
 
               {/* Margem de Lucro Desejada e Preço Sugerido */}
               <div className="p-4 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-2 border-indigo-500/30 rounded-2xl space-y-3">
-                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-900 dark:text-white uppercase mb-0.5">
+                    <label className="block text-[11px] font-bold text-slate-900 dark:text-white uppercase mb-1">
                       Margem de Lucro Desejada (%)
                     </label>
                     <div className="flex items-center gap-2">
@@ -694,9 +907,9 @@ export function CatalogClientView({
                         max="500"
                         value={desiredMargin}
                         onChange={(e) => setDesiredMargin(parseFloat(e.target.value) || 0)}
-                        className="w-24 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-black text-indigo-600 text-sm"
+                        className="w-28 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-black text-indigo-600 text-base"
                       />
-                      <span className="text-xs text-slate-500">% sobre o custo</span>
+                      <span className="text-xs font-semibold text-slate-500">% sobre o custo de produção</span>
                     </div>
                   </div>
 
@@ -704,7 +917,7 @@ export function CatalogClientView({
                     <span className="text-[10px] uppercase font-bold text-slate-500 block">
                       Preço Sugerido com Lucro
                     </span>
-                    <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                    <span className="text-3xl font-black text-emerald-600 dark:text-emerald-400">
                       {formatBRL(suggestedSalePrice)}
                     </span>
                   </div>
@@ -714,7 +927,7 @@ export function CatalogClientView({
                   <button
                     type="button"
                     onClick={handleApplyCalculatedPrice}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-sm transition"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-sm transition"
                   >
                     Usar Preço Sugerido ({formatBRL(suggestedSalePrice)})
                   </button>
@@ -722,7 +935,7 @@ export function CatalogClientView({
               </div>
 
               {/* Preço Oficial e Estoque */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
                     Preço Oficial de Venda (R$) *
@@ -733,7 +946,7 @@ export function CatalogClientView({
                     required
                     value={basePrice}
                     onChange={(e) => setBasePrice(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-extrabold text-base text-indigo-600"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-extrabold text-lg text-indigo-600"
                   />
                 </div>
                 <div>
@@ -745,7 +958,7 @@ export function CatalogClientView({
                     required
                     value={stockQuantity}
                     onChange={(e) => setStockQuantity(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-lg"
                   />
                 </div>
               </div>
@@ -762,30 +975,30 @@ export function CatalogClientView({
                 />
               </div>
 
-              <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-800">
+              <div className="flex items-center justify-between pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
                   disabled={loading}
                   onClick={() => handleDeleteProduct(editingProduct)}
-                  className="flex items-center gap-1.5 px-3 py-2 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-900/40 transition disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl text-xs font-bold border border-rose-200 dark:border-rose-900/40 transition disabled:opacity-50"
                   title="Excluir este item definitivamente do catálogo"
                 >
                   <Trash2 className="w-4 h-4" />
                   <span>Excluir Item</span>
                 </button>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => setEditingProduct(null)}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition"
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition"
                   >
                     Cancelar
                   </button>
                   <button
                     type="submit"
                     disabled={loading}
-                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50"
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md transition disabled:opacity-50"
                   >
                     Salvar Preço Oficial
                   </button>
@@ -796,161 +1009,557 @@ export function CatalogClientView({
         </div>
       )}
 
-      {/* Modal - Cadastrar Novo Item no Catálogo (Item 5) */}
+      {/* Modal - Cadastrar Novo Item no Catálogo (Repaginado em Tela Cheia & Integrado ao Plano de Contas) */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative max-h-[92vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <ShoppingBag className="w-5 h-5 text-indigo-600" />
-                Cadastrar Novo Item no Catálogo
-              </h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-white">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full h-full sm:max-w-[97vw] sm:max-h-[96vh] shadow-2xl relative flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header com visual amplo */}
+            <div className="px-5 py-4 sm:px-6 sm:py-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-950/40 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-100 dark:bg-indigo-950/80 text-indigo-600 dark:text-indigo-400">
+                  <ShoppingBag className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 dark:text-white flex items-center gap-2">
+                    Cadastrar Novo Item no Catálogo
+                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                      Plano de Contas Integrado
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Preencha os dados comerciais e selecione os insumos e embalagens. Os custos e a margem real são calculados automaticamente.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCreateModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                title="Fechar"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateProduct} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                  Nome do Produto / Modelo *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Vela Aromática Lavanda Francesa 180g"
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold"
-                />
+            {/* Conteúdo com Scroll Espaçoso */}
+            <form onSubmit={handleCreateProduct} className="flex-1 flex flex-col overflow-hidden text-xs">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+                
+                {/* 1. DADOS COMERCIAIS BÁSICOS DO PRODUTO */}
+                <div className="bg-slate-50/60 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 space-y-4">
+                  <span className="text-[11px] font-black uppercase tracking-wider text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
+                    <Tag className="w-4 h-4" />
+                    1. Identificação Comercial & Seção Visual
+                  </span>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    {/* Nome do Produto */}
+                    <div className="md:col-span-5">
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
+                        Nome do Produto / Modelo *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Ex: Vela Aromática Lavanda Francesa 180g"
+                        value={createName}
+                        onChange={(e) => setCreateName(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+
+                    {/* Seção Visual */}
+                    <div className="md:col-span-4">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase">
+                          Seção Visual do Catálogo *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingSectionKey(null);
+                            setSectionNameInput("");
+                            setShowSectionsModal(true);
+                          }}
+                          className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                          title="Adicionar ou editar seções visuais"
+                        >
+                          <FolderTree className="w-3 h-3" />
+                          + Gerenciar Seções
+                        </button>
+                      </div>
+                      <select
+                        value={createCategory}
+                        onChange={(e) => setCreateCategory(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-sm text-indigo-700 dark:text-indigo-300"
+                      >
+                        {Object.entries(visualSections).map(([catKey, catLabel]) => (
+                          <option key={catKey} value={catKey}>
+                            {catLabel}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Preço de Venda */}
+                    <div className="md:col-span-3">
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase mb-1">
+                        Preço Oficial de Venda (R$) *
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        required
+                        placeholder="0,00"
+                        value={createBasePrice}
+                        onChange={(e) => setCreateBasePrice(e.target.value)}
+                        className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-black text-base text-indigo-600 dark:text-indigo-400"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    {/* Estoque Inicial */}
+                    <div className="md:col-span-3">
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                        Estoque Inicial (un)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={createStock}
+                        onChange={(e) => setCreateStock(e.target.value)}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-center"
+                      />
+                    </div>
+
+                    {/* Estoque Mínimo */}
+                    <div className="md:col-span-3">
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                        Estoque Mínimo de Alerta
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={createMinStock}
+                        onChange={(e) => setCreateMinStock(e.target.value)}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-center"
+                      />
+                    </div>
+
+                    {/* Descrição */}
+                    <div className="md:col-span-6">
+                      <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                        Descrição Comercial / Aroma
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Notas olfativas, família aromática ou especificações da peça"
+                        value={createDescription}
+                        onChange={(e) => setCreateDescription(e.target.value)}
+                        className="w-full px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. NOVA ÁREA DE INTEGRAÇÃO COM PLANO DE CONTAS */}
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-900/50 rounded-2xl">
+                    <div className="flex items-center gap-2">
+                      <Layers className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                      <div>
+                        <h4 className="font-extrabold text-xs text-indigo-950 dark:text-indigo-200">
+                          2. Composição de Insumos & Custos pelo Plano de Contas
+                        </h4>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                          Filtro automático baseado na seção selecionada:{" "}
+                          <strong className="text-indigo-600 dark:text-indigo-400">{createCategory}</strong>
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="px-2.5 py-1 rounded-xl bg-white dark:bg-slate-900 text-[10px] font-bold text-slate-700 dark:text-slate-300 border border-indigo-200 dark:border-indigo-800">
+                        {activeRawAccountName}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Controle Mobile de Abas */}
+                  <div className="flex sm:hidden p-1 bg-slate-200 dark:bg-slate-800 rounded-xl text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setMobileTab("materials")}
+                      className={`flex-1 py-1.5 rounded-lg transition ${
+                        mobileTab === "materials"
+                          ? "bg-white dark:bg-slate-900 text-indigo-600 shadow-xs"
+                          : "text-slate-600 dark:text-slate-400"
+                      }`}
+                    >
+                      🌿 Matérias-Primas ({selectedRawMaterials.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMobileTab("packaging")}
+                      className={`flex-1 py-1.5 rounded-lg transition ${
+                        mobileTab === "packaging"
+                          ? "bg-white dark:bg-slate-900 text-indigo-600 shadow-xs"
+                          : "text-slate-600 dark:text-slate-400"
+                      }`}
+                    >
+                      📦 Embalagens ({selectedPackagings.length})
+                    </button>
+                  </div>
+
+                  {/* Grid de 2 Colunas no Desktop / Tablet */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    
+                    {/* COLUNA 1: MATÉRIAS-PRIMAS (Conta 2.1 para Velas, 2.2 para Resinas) */}
+                    <div
+                      className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col space-y-3 ${
+                        mobileTab !== "materials" ? "hidden sm:flex" : "flex"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-2">
+                          <Flame className="w-4 h-4 text-amber-500" />
+                          <span className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                            Matérias-Primas (Conta {activeRawAccountCode})
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-slate-500 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800">
+                          {selectedRawMaterials.length} item(ns)
+                        </span>
+                      </div>
+
+                      {/* Dropdown de Seleção de Insumo */}
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          Adicionar Insumo do Estoque:
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            onChange={(e) => {
+                              handleAddRawMaterial(e.target.value);
+                              e.target.value = "";
+                            }}
+                            defaultValue=""
+                            className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200"
+                          >
+                            <option value="" disabled>
+                              Selecione uma matéria-prima da Conta {activeRawAccountCode}...
+                            </option>
+                            {filteredRawMaterials.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.name} — Custo: {formatBRL(r.unitCost || 0)} / {r.unit || "g"} (Estoque: {Number(r.currentStock) || 0} {r.unit || "g"})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Chips Rápidos de Insumos Comuns */}
+                      {filteredRawMaterials.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 block">Opções Rápidas (Clique para adicionar):</span>
+                          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                            {filteredRawMaterials.slice(0, 8).map((r) => {
+                              const isAdded = selectedRawMaterials.some((it) => it.rawMaterialId === r.id);
+                              return (
+                                <button
+                                  key={r.id}
+                                  type="button"
+                                  onClick={() => handleAddRawMaterial(r.id)}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 ${
+                                    isAdded
+                                      ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 opacity-60"
+                                      : "bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950/60 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-indigo-300"
+                                  }`}
+                                >
+                                  {isAdded && <Check className="w-3 h-3 text-emerald-600" />}
+                                  <span>{r.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tabela de Insumos Adicionados */}
+                      <div className="flex-1 min-h-[160px] overflow-y-auto space-y-2 border border-slate-100 dark:border-slate-800/80 rounded-xl p-2 bg-slate-50/50 dark:bg-slate-950/30">
+                        {selectedRawMaterials.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-400">
+                            <Flame className="w-8 h-8 opacity-30 mb-1" />
+                            <p className="text-xs font-semibold">Nenhuma matéria-prima incluída.</p>
+                            <span className="text-[10px] text-slate-400">Selecione no menu acima os componentes desta receita.</span>
+                          </div>
+                        ) : (
+                          selectedRawMaterials.map((it) => {
+                            const isGram = it.unit?.toUpperCase() === "G";
+                            const lineCost = isGram
+                              ? (it.quantity / 1000) * it.unitCost
+                              : it.quantity * it.unitCost;
+
+                            return (
+                              <div
+                                key={it.rawMaterialId}
+                                className="flex items-center justify-between gap-2 p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs"
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate block">
+                                    {it.name}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500">
+                                    Custo do estoque: {formatBRL(it.unitCost)}/{isGram ? "kg" : it.unit}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      step="0.1"
+                                      min="0.1"
+                                      value={it.quantity}
+                                      onChange={(e) =>
+                                        handleUpdateRawMaterialQty(it.rawMaterialId, parseFloat(e.target.value) || 0)
+                                      }
+                                      className="w-16 px-2 py-1 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold text-xs"
+                                    />
+                                    <span className="text-[11px] font-bold text-slate-500 uppercase">{it.unit}</span>
+                                  </div>
+
+                                  <div className="w-20 text-right">
+                                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 block">
+                                      {formatBRL(lineCost)}
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveRawMaterial(it.rawMaterialId)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
+                                    title="Remover insumo"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Subtotal da Coluna */}
+                      <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-800 font-bold">
+                        <span className="text-slate-500 text-[11px]">Subtotal Matérias-Primas:</span>
+                        <span className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
+                          {formatBRL(calculatedRawTotal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* COLUNA 2: EMBALAGENS E RECIPIENTES (Conta 2.3) */}
+                    <div
+                      className={`bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col space-y-3 ${
+                        mobileTab !== "packaging" ? "hidden sm:flex" : "flex"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                        <div className="flex items-center gap-2">
+                          <Box className="w-4 h-4 text-indigo-500" />
+                          <span className="font-bold text-xs text-slate-800 dark:text-slate-200">
+                            Embalagens & Recipientes (Conta 2.3)
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-semibold text-slate-500 px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800">
+                          {selectedPackagings.length} item(ns)
+                        </span>
+                      </div>
+
+                      {/* Dropdown de Seleção de Embalagem */}
+                      <div className="space-y-1.5">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase">
+                          Adicionar Embalagem do Estoque:
+                        </label>
+                        <div className="flex gap-2">
+                          <select
+                            onChange={(e) => {
+                              handleAddPackaging(e.target.value);
+                              e.target.value = "";
+                            }}
+                            defaultValue=""
+                            className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-semibold text-slate-800 dark:text-slate-200"
+                          >
+                            <option value="" disabled>
+                              Selecione uma embalagem da Conta 2.3...
+                            </option>
+                            {filteredPackagings.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} — Custo: {formatBRL(p.unitCost || 0)} (Estoque: {p.currentStock} un)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Chips Rápidos de Embalagens Comuns */}
+                      {filteredPackagings.length > 0 && (
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-slate-400 block">Opções Rápidas (Potes, Frascos, Caixas):</span>
+                          <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                            {filteredPackagings.slice(0, 8).map((p) => {
+                              const isAdded = selectedPackagings.some((it) => it.packagingId === p.id);
+                              return (
+                                <button
+                                  key={p.id}
+                                  type="button"
+                                  onClick={() => handleAddPackaging(p.id)}
+                                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition flex items-center gap-1 ${
+                                    isAdded
+                                      ? "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 opacity-60"
+                                      : "bg-slate-100 hover:bg-indigo-50 dark:bg-slate-800 dark:hover:bg-indigo-950/60 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:border-indigo-300"
+                                  }`}
+                                >
+                                  {isAdded && <Check className="w-3 h-3 text-emerald-600" />}
+                                  <span>{p.name}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tabela de Embalagens Adicionadas */}
+                      <div className="flex-1 min-h-[160px] overflow-y-auto space-y-2 border border-slate-100 dark:border-slate-800/80 rounded-xl p-2 bg-slate-50/50 dark:bg-slate-950/30">
+                        {selectedPackagings.length === 0 ? (
+                          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-400">
+                            <Box className="w-8 h-8 opacity-30 mb-1" />
+                            <p className="text-xs font-semibold">Nenhuma embalagem incluída.</p>
+                            <span className="text-[10px] text-slate-400">Selecione potes, caixas ou rótulos acima.</span>
+                          </div>
+                        ) : (
+                          selectedPackagings.map((it) => {
+                            const lineCost = it.quantity * it.unitCost;
+
+                            return (
+                              <div
+                                key={it.packagingId}
+                                className="flex items-center justify-between gap-2 p-2.5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs"
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <span className="font-bold text-slate-800 dark:text-slate-200 text-xs truncate block">
+                                    {it.name}
+                                  </span>
+                                  <span className="text-[10px] text-slate-500">
+                                    Custo unitário: {formatBRL(it.unitCost)}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <div className="flex items-center gap-1">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      value={it.quantity}
+                                      onChange={(e) =>
+                                        handleUpdatePackagingQty(it.packagingId, parseInt(e.target.value, 10) || 1)
+                                      }
+                                      className="w-14 px-2 py-1 text-right bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg font-bold text-xs"
+                                    />
+                                    <span className="text-[11px] font-bold text-slate-500">un</span>
+                                  </div>
+
+                                  <div className="w-20 text-right">
+                                    <span className="text-xs font-black text-indigo-600 dark:text-indigo-400 block">
+                                      {formatBRL(lineCost)}
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemovePackaging(it.packagingId)}
+                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition"
+                                    title="Remover embalagem"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Subtotal da Coluna */}
+                      <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-800 font-bold">
+                        <span className="text-slate-500 text-[11px]">Subtotal Embalagens:</span>
+                        <span className="text-sm font-extrabold text-slate-900 dark:text-slate-100">
+                          {formatBRL(calculatedPackTotal)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase">
-                    Seção Visual do Catálogo *
-                  </label>
+              {/* 3. BARRA DE RESUMO EM TEMPO REAL & AÇÕES */}
+              <div className="px-5 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-950/60 shrink-0 space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Custo Direto Real</span>
+                    <span className="text-base sm:text-lg font-black text-rose-600 dark:text-rose-400">
+                      {formatBRL(calculatedDirectCost)}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Preço de Venda</span>
+                    <span className="text-base sm:text-lg font-black text-indigo-600 dark:text-indigo-400">
+                      {formatBRL(basePriceNum)}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Lucro Bruto Unitário</span>
+                    <span className={`text-base sm:text-lg font-black ${calculatedProfitBRL >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600"}`}>
+                      {formatBRL(calculatedProfitBRL)}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Margem Real Resultante</span>
+                    <span className={`text-base sm:text-lg font-black ${calculatedMarginPct >= 30 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-500"}`}>
+                      {calculatedMarginPct}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-3 pt-1">
                   <button
                     type="button"
-                    onClick={() => {
-                      setEditingSectionKey(null);
-                      setSectionNameInput("");
-                      setShowSectionsModal(true);
-                    }}
-                    className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
-                    title="Adicionar ou editar seções visuais pré-definidas"
+                    onClick={() => setShowCreateModal(false)}
+                    className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition"
                   >
-                    <FolderTree className="w-3.5 h-3.5" />
-                    + Adicionar / Editar Seções
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={loading || !createName.trim()}
+                    className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-lg shadow-indigo-600/20 transition flex items-center gap-2"
+                  >
+                    {loading ? (
+                      <span>Cadastrando...</span>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>Cadastrar no Catálogo com Composição</span>
+                      </>
+                    )}
                   </button>
                 </div>
-                <select
-                  value={createCategory}
-                  onChange={(e) => setCreateCategory(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
-                >
-                  {Object.entries(visualSections).map(([catKey, catLabel]) => (
-                    <option key={catKey} value={catKey}>
-                      {catLabel}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                    Preço de Venda (R$) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={createBasePrice}
-                    onChange={(e) => setCreateBasePrice(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-extrabold text-indigo-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                    Custo Unitário Estimado (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={createCost}
-                    onChange={(e) => setCreateCost(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                    Margem (%)
-                  </label>
-                  <input
-                    type="number"
-                    value={createMargin}
-                    onChange={(e) => setCreateMargin(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-center"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                    Estoque Inicial (un)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={createStock}
-                    onChange={(e) => setCreateStock(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-bold text-center"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                    Estoque Mínimo
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={createMinStock}
-                    onChange={(e) => setCreateMinStock(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl font-semibold text-center"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                  Descrição do Item
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Aroma, composição, detalhes e características do produto"
-                  value={createDescription}
-                  onChange={(e) => setCreateDescription(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl text-xs font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md"
-                >
-                  {loading ? "Cadastrando..." : "Cadastrar Produto"}
-                </button>
               </div>
             </form>
           </div>
@@ -959,8 +1568,8 @@ export function CatalogClientView({
 
       {/* Modal - Gerenciar / Adicionar / Editar Seções Visuais do Catálogo */}
       {showSectionsModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl p-6 sm:p-8 shadow-2xl relative max-h-[94vh] flex flex-col animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center pb-3 border-b border-slate-200 dark:border-slate-800">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">

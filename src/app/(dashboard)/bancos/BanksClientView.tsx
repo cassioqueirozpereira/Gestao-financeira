@@ -356,8 +356,8 @@ export function BanksClientView({
 
       {/* Modal Nova Conta */}
       {showAccountModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative text-xs">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl p-6 sm:p-8 shadow-2xl relative text-xs max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <button
               onClick={() => setShowAccountModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
@@ -439,8 +439,8 @@ export function BanksClientView({
 
       {/* Modal Editar Conta Bancária */}
       {editingAccount && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative text-xs">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl p-6 sm:p-8 shadow-2xl relative text-xs max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <button
               onClick={() => setEditingAccount(null)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
@@ -539,8 +539,8 @@ export function BanksClientView({
 
       {/* Modal Editar Cartão de Crédito */}
       {editingCard && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative text-xs">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl p-6 sm:p-8 shadow-2xl relative text-xs max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <button
               onClick={() => setEditingCard(null)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
@@ -657,8 +657,8 @@ export function BanksClientView({
 
       {/* Modal Novo Cartão */}
       {showCardModal && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative text-xs">
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl sm:rounded-3xl w-full max-w-4xl p-6 sm:p-8 shadow-2xl relative text-xs max-h-[95vh] overflow-y-auto animate-in zoom-in-95 duration-200">
             <button
               onClick={() => setShowCardModal(false)}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"

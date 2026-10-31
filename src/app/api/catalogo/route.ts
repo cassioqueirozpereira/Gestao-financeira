@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
       stockQuantity = 0,
       minStockQuantity = 5,
       description = "",
+      items = [],
+      packagingItems = [],
     } = body;
 
     if (!name || !name.trim()) {
@@ -69,6 +71,45 @@ export async function POST(req: NextRequest) {
         });
       } catch (retryErr: any) {
         throw new Error(retryErr.message || err.message);
+      }
+    }
+
+    // Se foram informados itens de matéria-prima ou embalagens, cria a ficha técnica inicial vinculada
+    if ((Array.isArray(items) && items.length > 0) || (Array.isArray(packagingItems) && packagingItems.length > 0)) {
+      try {
+        await db.technicalSheet.create({
+          data: {
+            productId: newProduct.id,
+            version: 1,
+            expectedYield: 1,
+            wastePercentage: 5,
+            laborCostEstimated: 0,
+            energyCostEstimated: 0,
+            gasCostEstimated: 0,
+            notes: JSON.stringify({
+              calculatedAt: new Date().toISOString(),
+              createdViaCatalog: true,
+            }),
+            items: {
+              create: items
+                .filter((it: any) => it.rawMaterialId && Number(it.quantity) > 0)
+                .map((it: any) => ({
+                  rawMaterialId: it.rawMaterialId,
+                  quantity: Number(it.quantity) || 0,
+                })),
+            },
+            packagingItems: {
+              create: packagingItems
+                .filter((pit: any) => pit.packagingId && Number(pit.quantity) > 0)
+                .map((pit: any) => ({
+                  packagingId: pit.packagingId,
+                  quantity: parseInt(pit.quantity, 10) || 1,
+                })),
+            },
+          },
+        });
+      } catch (sheetErr) {
+        console.warn("Aviso ao criar ficha técnica inicial:", sheetErr);
       }
     }
 
