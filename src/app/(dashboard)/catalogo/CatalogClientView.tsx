@@ -19,6 +19,8 @@ import {
   FolderTree,
   Trash2,
   Sparkles,
+  AlertCircle,
+  AlertTriangle,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { FichaTecnicaModal } from "./FichaTecnicaModal";
@@ -37,7 +39,55 @@ export function CatalogClientView({
   const [visualSections, setVisualSections] = useState<Record<string, string>>(categoryLabels);
   const [selectedProductForFicha, setSelectedProductForFicha] = useState<any | null>(null);
 
-  // Sincroniza com localStorage no carregamento do cliente
+  // Sistema de Toast Personalizado (Cores e tema do Casaratech)
+  const [toast, setToast] = useState<{
+    id: number;
+    type: "success" | "error" | "info" | "warning";
+    message: string;
+  } | null>(null);
+
+  const showToast = (type: "success" | "error" | "info" | "warning", message: string) => {
+    setToast({ id: Date.now(), type, message });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Modal de Confirmação Personalizado (substitui window.confirm nativo do navegador)
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText?: string;
+    cancelText?: string;
+    variant?: "danger" | "warning" | "default";
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  // Lista de seções legadas do código antigo que foram excluídas e NUNCA devem voltar
+  const legacyDeletedKeys = [
+    "CHANTILLY_E_FLOR",
+    "Chantilly e Flor",
+    "VASOS_DECORATIVOS",
+    "Vasos e Produtos Decorativos",
+    "COLECAO_NATAL",
+    "Coleção Natal",
+    "ARVORES_NATAL_AVULSAS",
+    "Árvores de Natal Avulsas",
+    "ARVORES_NATAL_COPO",
+    "Árvores de Natal Dentro do Copo",
+  ];
+
+  // Sincroniza com localStorage no carregamento do cliente e expurga seções excluídas
   useEffect(() => {
     try {
       const stored = localStorage.getItem("da_catalog_visual_sections");
@@ -45,22 +95,28 @@ export function CatalogClientView({
         const parsed = JSON.parse(stored);
         const cleaned: Record<string, string> = {};
         for (const [k, v] of Object.entries(parsed)) {
-          if (!k.startsWith("SECTION_")) {
+          if (
+            !k.startsWith("SECTION_") &&
+            !legacyDeletedKeys.includes(k) &&
+            !legacyDeletedKeys.includes(String(v))
+          ) {
             cleaned[k] = String(v);
-          } else if (v && typeof v === "string") {
-            cleaned[v] = v;
           }
         }
         try {
           localStorage.setItem("da_catalog_visual_sections", JSON.stringify(cleaned));
         } catch {}
+
         setVisualSections((prev) => {
-          const merged = { ...prev, ...cleaned };
-          // Remove chaves SECTION_ do estado
+          const merged = { ...prev };
+          // Remove seções legadas antigas e chaves com SECTION_
           for (const key of Object.keys(merged)) {
-            if (key.startsWith("SECTION_")) {
+            if (key.startsWith("SECTION_") || legacyDeletedKeys.includes(key)) {
               delete merged[key];
             }
+          }
+          for (const [k, v] of Object.entries(cleaned)) {
+            merged[k] = v;
           }
           return merged;
         });
@@ -172,10 +228,10 @@ export function CatalogClientView({
       }
       setEditingSectionKey(null);
       setSectionNameInput("");
-      setFeedback(`Seção visual "${nameToSave.trim()}" salva com sucesso!`);
+      showToast("success", `Seção visual "${nameToSave.trim()}" salva com sucesso!`);
       router.refresh();
     } catch (err: any) {
-      alert(err.message || "Erro ao salvar seção visual");
+      showToast("error", err.message || "Erro ao salvar seção visual");
     } finally {
       setSavingSection(false);
     }
@@ -186,44 +242,49 @@ export function CatalogClientView({
     await saveSectionAction(sectionNameInput, editingSectionKey);
   };
 
-  const handleDeleteVisualSection = async (key: string) => {
-    if (
-      !confirm(
-        `Deseja realmente remover esta seção visual? Itens com esta seção manterão o registro, mas a seção não será mais listada.`
-      )
-    ) {
-      return;
-    }
-    setSavingSection(true);
-    try {
-      const res = await fetch(`/api/catalogo/secoes?key=${encodeURIComponent(key)}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erro ao excluir seção visual");
-
-      if (data.sections) {
-        setVisualSections(data.sections);
+  const handleDeleteVisualSection = (key: string) => {
+    const countItems = products.filter((p) => p.category === key).length;
+    setConfirmModal({
+      isOpen: true,
+      title: "Excluir Seção Visual",
+      message:
+        countItems > 0
+          ? `A seção "${key}" possui ${countItems} item(ns). Deseja realmente removê-la? Os produtos continuarão no sistema com a seção desvinculada.`
+          : `Tem certeza que deseja remover a seção visual "${key}"? Ela será excluída definitivamente e não retornará ao recarregar a página.`,
+      confirmText: "Sim, Excluir",
+      cancelText: "Cancelar",
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        setSavingSection(true);
         try {
-          localStorage.setItem("da_catalog_visual_sections", JSON.stringify(data.sections));
-        } catch {}
-      } else {
-        setVisualSections((prev) => {
-          const next = { ...prev };
-          delete next[key];
-          try {
-            localStorage.setItem("da_catalog_visual_sections", JSON.stringify(next));
-          } catch {}
-          return next;
-        });
-      }
-      setFeedback(`Seção visual removida com sucesso!`);
-      router.refresh();
-    } catch (err: any) {
-      alert(err.message || "Erro ao excluir seção visual");
-    } finally {
-      setSavingSection(false);
-    }
+          const res = await fetch(`/api/catalogo/secoes?key=${encodeURIComponent(key)}`, {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Erro ao excluir seção visual");
+
+          setVisualSections((prev) => {
+            const next = { ...prev };
+            delete next[key];
+            for (const [k, v] of Object.entries(next)) {
+              if (k === key || v === key) delete next[k];
+            }
+            try {
+              localStorage.setItem("da_catalog_visual_sections", JSON.stringify(next));
+            } catch {}
+            return next;
+          });
+
+          showToast("success", `Seção visual "${key}" removida com sucesso!`);
+          router.refresh();
+        } catch (err: any) {
+          showToast("error", err.message || "Erro ao excluir seção visual");
+        } finally {
+          setSavingSection(false);
+        }
+      },
+    });
   };
 
   const handleSaveProduct = async (e: React.FormEvent) => {
@@ -254,51 +315,54 @@ export function CatalogClientView({
         products.map((p) => (p.id === editingProduct.id ? { ...p, ...data.product } : p))
       );
       setEditingProduct(null);
-      setFeedback(`Preço oficial de "${name}" atualizado para R$ ${parseFloat(basePrice).toFixed(2)}!`);
+      showToast("success", `Preço oficial de "${name}" atualizado para R$ ${parseFloat(basePrice).toFixed(2)}!`);
       router.refresh();
     } catch (err: any) {
-      alert(err.message);
+      showToast("error", err.message || "Erro ao salvar produto");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDeleteProduct = async (product: any) => {
+  const handleDeleteProduct = (product: any) => {
     if (!product || !product.id) return;
 
-    if (
-      !confirm(
-        `Tem certeza que deseja excluir o item "${product.name}" do catálogo?\n\nEsta ação removerá o produto do catálogo comercial.`
-      )
-    ) {
-      return;
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: "Excluir Item do Catálogo",
+      message: `Tem certeza que deseja excluir o item "${product.name}" do catálogo comercial oficial?`,
+      confirmText: "Sim, Excluir Produto",
+      cancelText: "Cancelar",
+      variant: "danger",
+      onConfirm: async () => {
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+        setLoading(true);
+        try {
+          const res = await fetch(`/api/catalogo?id=${encodeURIComponent(product.id)}`, {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Erro ao excluir produto");
 
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/catalogo?id=${encodeURIComponent(product.id)}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Erro ao excluir produto");
-
-      setProducts((prev) => prev.filter((p) => p.id !== product.id));
-      if (editingProduct?.id === product.id) {
-        setEditingProduct(null);
-      }
-      setFeedback(`Item "${product.name}" excluído com sucesso do catálogo!`);
-      router.refresh();
-    } catch (err: any) {
-      alert(err.message || "Erro ao excluir produto");
-    } finally {
-      setLoading(false);
-    }
+          setProducts((prev) => prev.filter((p) => p.id !== product.id));
+          if (editingProduct?.id === product.id) {
+            setEditingProduct(null);
+          }
+          showToast("success", `Item "${product.name}" excluído com sucesso do catálogo!`);
+          router.refresh();
+        } catch (err: any) {
+          showToast("error", err.message || "Erro ao excluir produto");
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createName.trim()) {
-      alert("Informe o nome do item");
+      showToast("warning", "Informe o nome do item para cadastrar.");
       return;
     }
     setLoading(true);
@@ -326,10 +390,10 @@ export function CatalogClientView({
       setShowCreateModal(false);
       setCreateName("");
       setCreateDescription("");
-      setFeedback(`Item "${data.product.name}" adicionado ao catálogo com sucesso!`);
+      showToast("success", `Item "${data.product.name}" adicionado ao catálogo com sucesso!`);
       router.refresh();
     } catch (err: any) {
-      alert(err.message);
+      showToast("error", err.message || "Erro ao criar item");
     } finally {
       setLoading(false);
     }
@@ -1034,9 +1098,105 @@ export function CatalogClientView({
             setProducts((prev) =>
               prev.map((p) => (p.id === updated.id ? { ...p, ...updated } : p))
             );
-            setFeedback(`Ficha técnica e custos de "${updated.name}" atualizados com sucesso!`);
+            showToast("success", `Ficha técnica e custos de "${updated.name}" atualizados com sucesso!`);
           }}
         />
+      )}
+
+      {/* Toast Notificação Personalizada (Casaratech Theme) */}
+      {toast && (
+        <div
+          role="alert"
+          className={`fixed top-6 right-6 z-[9999] max-w-md flex items-start gap-3 p-4 rounded-2xl shadow-2xl border backdrop-blur-md transition-all duration-300 animate-in slide-in-from-top-4 ${
+            toast.type === "success"
+              ? "bg-emerald-50/95 dark:bg-emerald-950/90 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100"
+              : toast.type === "error"
+              ? "bg-rose-50/95 dark:bg-rose-950/90 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-100"
+              : toast.type === "warning"
+              ? "bg-amber-50/95 dark:bg-amber-950/90 border-amber-300 dark:border-amber-800 text-amber-900 dark:text-amber-100"
+              : "bg-indigo-50/95 dark:bg-indigo-950/90 border-indigo-300 dark:border-indigo-800 text-indigo-900 dark:text-indigo-100"
+          }`}
+        >
+          <div className="shrink-0 mt-0.5">
+            {toast.type === "success" && <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />}
+            {toast.type === "error" && <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-400" />}
+            {toast.type === "warning" && <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />}
+            {toast.type === "info" && <Info className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />}
+          </div>
+          <div className="flex-1 text-sm font-semibold leading-relaxed">
+            {toast.message}
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="shrink-0 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-black/5 transition"
+            title="Fechar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Modal de Confirmação Personalizado (Substitui window.confirm) */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-2xl max-w-md w-full relative animate-in zoom-in-95 duration-200">
+            <div className="flex items-start gap-4">
+              <div
+                className={`p-3 rounded-2xl shrink-0 ${
+                  confirmModal.variant === "danger"
+                    ? "bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400"
+                    : confirmModal.variant === "warning"
+                    ? "bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400"
+                    : "bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400"
+                }`}
+              >
+                {confirmModal.variant === "danger" ? (
+                  <Trash2 className="w-6 h-6" />
+                ) : confirmModal.variant === "warning" ? (
+                  <AlertTriangle className="w-6 h-6" />
+                ) : (
+                  <Info className="w-6 h-6" />
+                )}
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  {confirmModal.title}
+                </h3>
+                <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  {confirmModal.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition"
+              >
+                {confirmModal.cancelText || "Cancelar"}
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const action = confirmModal.onConfirm;
+                  setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+                  await action();
+                }}
+                className={`px-4 py-2 text-white rounded-xl text-xs font-bold shadow-md transition ${
+                  confirmModal.variant === "danger"
+                    ? "bg-rose-600 hover:bg-rose-500 shadow-rose-600/20"
+                    : confirmModal.variant === "warning"
+                    ? "bg-amber-600 hover:bg-amber-500 shadow-amber-600/20"
+                    : "bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/20"
+                }`}
+              >
+                {confirmModal.confirmText || "Confirmar"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

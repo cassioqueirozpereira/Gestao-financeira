@@ -3,29 +3,29 @@ import path from "path";
 
 const SECTIONS_FILE_PATH = path.join(process.cwd(), "src", "data", "catalog-sections.json");
 
-// Seções visuais pré-definidas padrão
-export const DEFAULT_CATALOG_SECTIONS: Record<string, string> = {
-  VELAS_NORMAIS_COLORIDAS: "Velas Normais e Coloridas",
-  VELAS_DECORADAS_FLORES: "Velas Decoradas com Flores",
-  CHANTILLY_E_FLOR: "Chantilly e Flor",
-  VASOS_DECORATIVOS: "Vasos e Produtos Decorativos",
-  COLECAO_NATAL: "Coleção Natal",
-  ARVORES_NATAL_AVULSAS: "Árvores de Natal Avulsas",
-  ARVORES_NATAL_COPO: "Árvores de Natal Dentro do Copo",
-  RESINAS_DIVERSAS: "Resinas e Peças Decorativas",
-};
+// Seções padrão vazias: o catálogo carrega exclusivamente as seções reais salvas no banco de dados
+export const DEFAULT_CATALOG_SECTIONS: Record<string, string> = {};
 
 export function getStoredCatalogSections(): Record<string, string> {
   try {
     if (fs.existsSync(SECTIONS_FILE_PATH)) {
       const data = fs.readFileSync(SECTIONS_FILE_PATH, "utf-8");
       const parsed = JSON.parse(data);
-      return { ...DEFAULT_CATALOG_SECTIONS, ...parsed };
+      if (typeof parsed === "object" && parsed !== null) {
+        // Filtra para nunca reinjetar seções técnicas antigas ou excluídas
+        const filtered: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed)) {
+          if (!k.startsWith("SECTION_")) {
+            filtered[k] = String(v);
+          }
+        }
+        return filtered;
+      }
     }
   } catch (err) {
     console.error("Erro ao ler catalog-sections.json:", err);
   }
-  return { ...DEFAULT_CATALOG_SECTIONS };
+  return {};
 }
 
 export function saveStoredCatalogSections(sections: Record<string, string>) {

@@ -3,7 +3,6 @@ import { getCurrentUser } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import { db } from "@/lib/db";
 import {
-  DEFAULT_CATALOG_SECTIONS,
   getStoredCatalogSections,
   saveStoredCatalogSections,
 } from "@/lib/catalog-sections";
@@ -12,18 +11,28 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const fileSections = getStoredCatalogSections();
-    const mergedSections: Record<string, string> = { ...DEFAULT_CATALOG_SECTIONS, ...fileSections };
+    // 1. Busca todas as categorias distintas atualmente salvas nos produtos no banco de dados
+    const products = await db.product.findMany({
+      select: { category: true },
+      distinct: ["category"],
+    });
 
-    // Limpa chaves antigas com prefixo SECTION_
-    for (const [k, v] of Object.entries(mergedSections)) {
-      if (k.startsWith("SECTION_")) {
-        delete mergedSections[k];
-        mergedSections[v] = v;
+    const activeSections: Record<string, string> = {};
+    for (const p of products) {
+      if (p.category && !p.category.startsWith("SECTION_")) {
+        activeSections[p.category] = p.category;
       }
     }
 
-    return NextResponse.json({ sections: mergedSections });
+    // 2. Mescla com seções customizadas criadas pelo usuário (se houver)
+    const fileSections = getStoredCatalogSections();
+    for (const [k, v] of Object.entries(fileSections)) {
+      if (!k.startsWith("SECTION_")) {
+        activeSections[k] = v;
+      }
+    }
+
+    return NextResponse.json({ sections: activeSections });
   } catch (error: any) {
     return NextResponse.json({ sections: getStoredCatalogSections() });
   }
@@ -51,10 +60,9 @@ export async function POST(req: NextRequest) {
     }
 
     const trimmedLabel = label.trim();
-    // A chave agora é SEMPRE o próprio nome exato criado pelo usuário (sem prefixo SECTION_)
     const finalKey = trimmedLabel;
 
-    // Se estiver editando e a chave anterior for diferente (ou chave antiga com SECTION_)
+    // Se estiver editando e a chave anterior for diferente
     if (key && key !== finalKey) {
       try {
         await db.product.updateMany({
@@ -67,7 +75,7 @@ export async function POST(req: NextRequest) {
       delete currentSections[key];
     }
 
-    // Limpa quaisquer chaves residuais com prefixo SECTION_ do dicionário
+    // Limpa quaisquer chaves residuais com prefixo SECTION_
     for (const [k, v] of Object.entries(currentSections)) {
       if (k.startsWith("SECTION_")) {
         delete currentSections[k];
@@ -116,12 +124,21 @@ export async function DELETE(req: NextRequest) {
 
     // Remove também chaves com prefixo SECTION_ correspondentes se houver
     for (const [k, v] of Object.entries(currentSections)) {
-      if (k === key || v === key) {
+      if (k === key || v === key || k.startsWith("SECTION_")) {
         delete currentSections[k];
       }
     }
 
     saveStoredCatalogSections(currentSections);
+
+    await logAudit({
+      userId: user.id,
+      action: "DELETE",
+      entity: "CatalogSection",
+      entityId: key,
+      ipAddress: req.headers.get("x-forwarded-for") || "127.0.0.1",
+      description: `Seção visual do catálogo excluída: "${key}"`,
+    });
 
     return NextResponse.json({ success: true, sections: currentSections });
   } catch (error: any) {

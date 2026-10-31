@@ -24,6 +24,7 @@ import {
   Globe,
   Tag,
   Sparkles,
+  AlertCircle,
 } from "lucide-react";
 
 interface FichaTecnicaModalProps {
@@ -43,6 +44,7 @@ export function FichaTecnicaModal({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Dados carregados da API
   const [availableRawMaterials, setAvailableRawMaterials] = useState<any[]>([]);
@@ -150,7 +152,7 @@ export function FichaTecnicaModal({
       })
       .catch((err) => {
         console.error("Erro ao carregar ficha técnica:", err);
-        if (isMounted) alert(err.message || "Erro ao carregar dados da ficha técnica");
+        if (isMounted) setErrorMessage(err.message || "Erro ao carregar dados da ficha técnica");
       })
       .finally(() => {
         if (isMounted) setLoading(false);
@@ -165,7 +167,7 @@ export function FichaTecnicaModal({
   const handleAddIngredient = () => {
     const firstAvailable = availableRawMaterials[0];
     if (!firstAvailable) {
-      alert("Nenhuma matéria-prima cadastrada no sistema. Cadastre matérias-primas no módulo de Estoque.");
+      setErrorMessage("Nenhuma matéria-prima cadastrada no sistema. Cadastre matérias-primas no módulo de Estoque.");
       return;
     }
     const defaultUnit = firstAvailable.unit?.toUpperCase() === "KG" ? "G" : firstAvailable.unit || "G";
@@ -203,7 +205,7 @@ export function FichaTecnicaModal({
   const handleAddPackaging = () => {
     const firstAvailable = availablePackagings[0];
     if (!firstAvailable) {
-      alert("Nenhuma embalagem cadastrada no sistema. Cadastre embalagens no módulo de Estoque.");
+      setErrorMessage("Nenhuma embalagem cadastrada no sistema. Cadastre embalagens no módulo de Estoque.");
       return;
     }
     setRecipePackagings([
@@ -418,7 +420,7 @@ export function FichaTecnicaModal({
         onClose();
       }, 1500);
     } catch (err: any) {
-      alert(err.message || "Erro ao salvar ficha técnica");
+      setErrorMessage(err.message || "Erro ao salvar ficha técnica");
     } finally {
       setSaving(false);
     }
@@ -462,6 +464,24 @@ export function FichaTecnicaModal({
           <div className="mx-6 mt-4 p-3 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 rounded-xl text-xs flex items-center gap-2 font-bold animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
             <span>{feedback}</span>
+          </div>
+        )}
+
+        {/* Error Alert */}
+        {errorMessage && (
+          <div className="mx-6 mt-4 p-3 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 rounded-xl text-xs flex items-center justify-between font-bold animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+              <span>{errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="p-1 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/40 text-rose-500"
+              title="Fechar aviso"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 

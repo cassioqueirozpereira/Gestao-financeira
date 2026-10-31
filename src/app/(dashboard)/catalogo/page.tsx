@@ -51,21 +51,27 @@ export default async function CatalogPage() {
     updatedAt: p.updatedAt.toISOString(),
   }));
 
-  const categoryLabels: Record<string, string> = { ...storedSections };
+  // Constrói as seções EXCLUSIVAMENTE a partir das categorias reais salvas no banco de dados
+  const categoryLabels: Record<string, string> = {};
 
-  // Remove chaves técnicas antigas
-  for (const k of Object.keys(categoryLabels)) {
-    if (k.startsWith("SECTION_")) {
-      delete categoryLabels[k];
-    }
-  }
-
-  // Garante que qualquer categoria já cadastrada em produtos permaneça visível no catálogo
   products.forEach((p) => {
-    if (p.category && !categoryLabels[p.category]) {
-      categoryLabels[p.category] = p.category;
+    if (p.category) {
+      let clean = p.category;
+      if (clean.startsWith("SECTION_")) {
+        clean = clean.replace(/^SECTION_/, "").replace(/_\d+$/, "").replace(/_/g, " ").trim();
+      }
+      if (clean) {
+        categoryLabels[clean] = clean;
+      }
     }
   });
+
+  // Mescla apenas seções ativas criadas explicitamente pelo usuário
+  for (const [k, v] of Object.entries(storedSections)) {
+    if (!k.startsWith("SECTION_") && v) {
+      categoryLabels[k] = v;
+    }
+  }
 
   return (
     <div className="space-y-6">
