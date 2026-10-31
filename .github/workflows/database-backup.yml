@@ -39,4 +39,4 @@ jobs:
         with:
           name: supabase-database-backup
           path: backups/
-          retention-days: 30 # Mantém o arquivo disponível para download por 30 dias gratuitamente
+          retention-days: 90 # Mantém o arquivo disponível para download pelo prazo máximo de 90 dias gratuitamente
